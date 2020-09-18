@@ -22,6 +22,8 @@ from ._utils import _gen_stat_list
 from ._utils import _open_by_engine
 from ._utils import _pick_engine
 
+__all__ = ['TimeSeries']
+
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 ALL_ENGINES = ('xarray', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
 RECOGNIZED_TIME_INTERVALS = ('years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds',)
