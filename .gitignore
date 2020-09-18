@@ -1,0 +1,7 @@
+.idea/
+docs/_build/
+build/
+dist/
+*.egg-info/
+.DS_Store
+.pypirc

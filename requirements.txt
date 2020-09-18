@@ -1,0 +1,14 @@
+rasterio
+rasterstats
+xarray
+h5py
+netcdf4
+eccodes
+cfgrib
+python-dateutil
+numpy
+pandas>=1
+requests
+affine
+geopandas
+pygrib
