@@ -6,6 +6,7 @@ All rights reserved
 """
 import datetime
 import os
+import warnings
 
 import affine
 import geopandas
@@ -15,7 +16,7 @@ import rasterio.features
 
 from ._utils import _array_by_engine
 from ._utils import _array_to_stat_list
-from ._utils import _attribute_by_engine
+from ._utils import _attr_by_engine
 from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
@@ -91,17 +92,26 @@ class TimeSeries:
         # optional parameter helping to handle spatial data series
         self.epsg = kwargs.get('epsg', False)
 
-    def point(self, *coordinates) -> pd.DataFrame:
+        # validate that some parameters are compatible
+        if self.engine == 'rasterio':
+            assert isinstance(self.var, int), 'GeoTIFF variables must be integer band numbers'
+            if not self.dim_order == ('y', 'x'):
+                warnings.warn('For GeoTIFFs, the correct dim order is ("y", "x")')
+                self.dim_order = ('y', 'x')
+
+    def point(self, *coordinates: int or float or None) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
 
         Args:
-            coordinates (int or float): provide a coordinate value (integer or float) for each dimension of the array
-                which you are creating a time series for. You need to provide exactly the same number of coordinates as
-                there are dimensions
+            coordinates (int or float or None): provide a coordinate value (integer or float) for each dimension of the
+                array which you are creating a time series for. You need to provide exactly the same number of
+                coordinates as there are dimensions
         Returns:
             pandas.DataFrame with an index, a column named datetime, and a column named values.
         """
+        assert len(self.dim_order) == len(coordinates)
+
         # make the return item
         results = dict(datetime=[], values=[])
 
@@ -125,7 +135,7 @@ class TimeSeries:
                 for v in vs:
                     results['values'].append(v)
             else:
-                raise ValueError('There are too many dimensions')
+                raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -142,6 +152,8 @@ class TimeSeries:
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
+        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates)
+
         # make the return item
         results = dict(datetime=[])
 
@@ -328,7 +340,13 @@ class TimeSeries:
         tmp_file = _open_by_engine(self.files[0], self.engine, self.xr_kwargs)
 
         for order, coord_var in enumerate(self.dim_order):
+            val1 = coords_min[order]
+            if val1 is None:
+                slices.append(slice(None))
+                continue
+
             vals = _array_by_engine(tmp_file, coord_var)
+
             # reduce the number of dimensions on the coordinate variable if applicable
             if vals.ndim < 2:
                 pass
@@ -344,11 +362,6 @@ class TimeSeries:
 
             min_val = vals.min()
             max_val = vals.max()
-
-            val1 = coords_min[order]
-            if not (isinstance(val1, int) or isinstance(val1, float)):
-                slices.append(slice(None))
-                continue
 
             if not max_val >= val1 >= min_val:
                 raise ValueError(f'Coordinate value ({val1}) is outside the min/max range ({min_val}, '
@@ -409,9 +422,12 @@ class TimeSeries:
     def _handle_time_steps(self, opened_file, file_path):
         if self.interp_units:  # convert the time variable array's numbers to datetime representations
             tvals = _array_by_engine(opened_file, self.t_var)
+            if self.engine == 'xarray':
+                return tvals
             if self.unit_str is None:
-                self.unit_str = _attribute_by_engine(opened_file, self.t_var, 'units')
-            return _delta_to_datetime(tvals, self.unit_str, self.origin_format)
+                return _delta_to_datetime(tvals, _attr_by_engine(opened_file, self.t_var, 'units'), self.origin_format)
+            else:
+                return _delta_to_datetime(tvals, self.unit_str, self.origin_format)
 
         elif self.strp_filename:  # strip the datetime from the file name
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
