@@ -99,6 +99,9 @@ class TimeSeries:
                 warnings.warn('For GeoTIFFs, the correct dim order is ("y", "x")')
                 self.dim_order = ('y', 'x')
 
+        elif self.engine == 'pygrib':
+            assert isinstance(self.var, int), 'pygrib engine variables must be integer band numbers'
+
     def point(self, *coordinates: int or float or None) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
@@ -337,6 +340,12 @@ class TimeSeries:
     def _map_coords_to_slice(self, coords_min: tuple, coords_max: tuple = False, ) -> tuple:
         slices = []
 
+        if self.engine == 'pygrib':
+            revert_engine = self.engine
+            self.engine = 'cfgrib'
+        else:
+            revert_engine = False
+
         tmp_file = _open_by_engine(self.files[0], self.engine, self.xr_kwargs)
 
         for order, coord_var in enumerate(self.dim_order):
@@ -385,8 +394,12 @@ class TimeSeries:
                 slices.append(slice(index1, index2))
             else:
                 slices.append(slice(index2, index1))
-        if self.engine != 'pygrib':
-            tmp_file.close()
+
+        tmp_file.close()
+
+        if revert_engine:
+            self.engine = revert_engine
+
         return tuple(slices)
 
     def _create_spatial_mask_array(self, geom: str, ) -> np.ma:
@@ -431,6 +444,9 @@ class TimeSeries:
 
         elif self.strp_filename:  # strip the datetime from the file name
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
+
+        elif self.engine == 'pygrib':
+            return [opened_file[self.var].validDate]
 
         elif _check_var_in_dataset(opened_file, self.t_var):  # use the time variable if it exists
             tvals = _array_by_engine(opened_file, self.t_var)
