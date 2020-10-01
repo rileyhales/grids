@@ -3,9 +3,13 @@ import datetime
 import h5py
 import netCDF4 as nc
 import numpy as np
-import pygrib
 import xarray as xr
 from dateutil.relativedelta import relativedelta
+
+try:
+    import pygrib
+except ImportError:
+    pass
 
 __all__ = ['_open_by_engine', '_array_by_engine', '_attr_by_engine', '_pick_engine', '_check_var_in_dataset',
            '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list']

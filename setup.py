@@ -28,5 +28,6 @@ setup(
         'Natural Language :: English',
         'Operating System :: OS Independent',
     ],
-    install_requires=install_requires
+    install_requires=install_requires,
+    extras_require=dict(pygrib=['pyproj', 'pygrib', ]),
 )
