@@ -1,4 +1,4 @@
-from temporal_informatics._ts import TimeSeries
+from tin._ts import TimeSeries
 
 __all__ = ['TimeSeries', ]
 __author__ = 'Riley Hales'

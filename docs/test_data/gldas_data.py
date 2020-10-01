@@ -3,7 +3,7 @@ import glob
 
 import pandas as pd
 
-import temporal_informatics as tin
+import tin as tin
 
 files = sorted(glob.glob('/Users/riley/spatialdata/thredds/gldas/raw/*.nc4'))
 var = 'Tair_f_inst'

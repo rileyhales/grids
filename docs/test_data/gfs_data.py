@@ -3,7 +3,7 @@ import glob
 
 import pandas as pd
 
-import temporal_informatics as tin
+import tin as tin
 
 files = sorted(glob.glob('/Users/riley/Downloads/gfs_20200101.grb2') * 500)
 var = '4lftx'
