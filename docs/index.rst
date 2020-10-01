@@ -1,3 +1,7 @@
+.. toctree::
+	:maxdepth: 3
+	:numbered:
+
 ********************
 Temporal Informatics
 ********************
@@ -82,3 +86,10 @@ TimeSeries
 
 .. automodule:: temporal_informatics
 	:members: TimeSeries
+
+Speed Test Results
+******************
+
+.. csv-table::
+	:file: test_data/speed_test_times.csv
+	:header-rows: 1

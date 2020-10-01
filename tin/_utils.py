@@ -7,12 +7,12 @@ import pygrib
 import xarray as xr
 from dateutil.relativedelta import relativedelta
 
-__all__ = ['_open_by_engine', '_array_by_engine', '_attribute_by_engine', '_pick_engine', '_check_var_in_dataset',
+__all__ = ['_open_by_engine', '_array_by_engine', '_attr_by_engine', '_pick_engine', '_check_var_in_dataset',
            '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list']
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 NETCDF_EXTENSIONS = ('.nc', '.nc4')
-GRIB_EXTENSIONS = ('.grb', '.grib', '.grib2')
+GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
 HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
 GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
 
@@ -44,7 +44,7 @@ def _array_by_engine(open_file, var: str or int) -> np.array:
         return open_file[var].data
     elif isinstance(open_file, xr.DataArray):  # rasterio
         if isinstance(var, int):
-            return open_file.data
+            return open_file.data[var]
         return open_file[var].data
     elif isinstance(open_file, nc.Dataset):  # netcdf4
         return open_file[var][:]
@@ -56,7 +56,7 @@ def _array_by_engine(open_file, var: str or int) -> np.array:
         raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
 
 
-def _attribute_by_engine(open_file, var: str, attribute: str) -> str:
+def _attr_by_engine(open_file, var: str, attribute: str) -> str:
     if isinstance(open_file, xr.Dataset) or isinstance(open_file, xr.DataArray):  # xarray, cfgrib, rasterio
         return open_file[var].attrs[attribute]
     elif isinstance(open_file, nc.Dataset):  # netcdf4

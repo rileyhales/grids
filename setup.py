@@ -9,8 +9,8 @@ with open('requirements.txt', 'r') as req:
     install_requires = req.read().splitlines()
 
 setup(
-    name='temporal_informatics',
-    packages=['temporal_informatics'],
+    name='tin',
+    packages=['tin'],
     version=version,
     description='Tools for extracting time series subsets from n-dimensional arrays in several storage formats.',
     long_description=long_description,
@@ -19,7 +19,7 @@ setup(
     license='BSD 3-Clause Clear',
     python_requires='>=3',
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'Programming Language :: Python :: 3',
         'Topic :: Scientific/Engineering :: GIS',
         'Topic :: Scientific/Engineering :: Information Analysis',
