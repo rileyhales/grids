@@ -5,6 +5,7 @@ pandas
 rasterio
 h5py
 netcdf4
+pyproj
 pygrib
 cfgrib
 eccodes
