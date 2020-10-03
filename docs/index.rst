@@ -53,13 +53,13 @@ Example Usage
 
 	# get a time series for a range of values (args are 2 tuples of coordinates
 	# None -> all time values, between 10-15 latitude, between 15 and 20 longitude
-	b = ts.range((None, 10, 15), (None, 15, 20))
+	b = ts.bound((None, 10, 15), (None, 15, 20))
 	print(b)
 
 	# get a time series within a shapefile's boundaries
 	# define raster data's EPSG, geometry will be reprojected to this before masking the rasters (see kwargs)
 	ts.epsg = 4326
-	c = ts.spatial('/path/to/my/shapefile.shp')
+	c = ts.shape('/path/to/my/shapefile.shp')
 	print(c)
 
 	# get a time series of the averages of the entire array

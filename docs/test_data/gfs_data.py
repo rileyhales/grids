@@ -19,9 +19,9 @@ for engine in ('cfgrib', ):
     t1 = datetime.datetime.now()
     ts.point(10, 10)
     t2 = datetime.datetime.now()
-    ts.range((10, 10), (20, 20))
+    ts.bound((10, 10), (20, 20))
     t3 = datetime.datetime.now()
-    ts.spatial('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
+    ts.shape('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
     t4 = datetime.datetime.now()
 
     pd.DataFrame({

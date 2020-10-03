@@ -10,9 +10,19 @@ import warnings
 
 import affine
 import geopandas
+import h5py
+import netCDF4 as nc
 import numpy as np
 import pandas as pd
 import rasterio.features
+import requests
+import xarray as xr
+from pydap.cas.urs import setup_session
+
+try:
+    import pygrib
+except ImportError:
+    pygrib = None
 
 from ._utils import _array_by_engine
 from ._utils import _array_to_stat_list
@@ -20,16 +30,18 @@ from ._utils import _attr_by_engine
 from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
-from ._utils import _open_by_engine
-from ._utils import _pick_engine
 
 __all__ = ['TimeSeries', ]
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-ALL_ENGINES = ('xarray', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
 RECOGNIZED_TIME_INTERVALS = ('years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds',)
 SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
 SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
+ALL_ENGINES = ('xarray', 'opendap', 'nasa-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
+NETCDF_EXTENSIONS = ('.nc', '.nc4')
+GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
+HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
+GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
 
 
 class TimeSeries:
@@ -75,9 +87,11 @@ class TimeSeries:
         self.dim_order = dim_order
 
         # optional parameters describing how to access the data
-        self.engine = kwargs.get('engine', _pick_engine(self.files[0]))
+        self.engine = kwargs.get('engine', False)
         self.xr_kwargs = kwargs.get('xr_kwargs', None)
         self.fill_value = kwargs.get('fill_value', -9999.0)
+        if not self.engine:
+            self._assign_engine()
 
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', 'time')
@@ -92,6 +106,15 @@ class TimeSeries:
         # optional parameter helping to handle spatial data series
         self.epsg = kwargs.get('epsg', False)
 
+        # optional authentication for remote datasets
+        self.user = kwargs.get('user', None)
+        self.pswd = kwargs.get('pswd', None)
+        self.session = kwargs.get('session', False)
+        if not self.session and self.user is not None and self.pswd is not None:
+            a = requests.Session()
+            a.auth = (self.user, self.pswd)
+            self.session = a
+
         # validate that some parameters are compatible
         if self.engine == 'rasterio':
             assert isinstance(self.var, int), 'GeoTIFF variables must be integer band numbers'
@@ -100,7 +123,18 @@ class TimeSeries:
                 self.dim_order = ('y', 'x')
 
         elif self.engine == 'pygrib':
+            if pygrib is None:
+                raise ModuleNotFoundError('pygrib engine only available if optional pygrib dependency is installed')
             assert isinstance(self.var, int), 'pygrib engine variables must be integer band numbers'
+
+    def __bool__(self):
+        return True
+
+    def __str__(self):
+        string = 'tin.TimeSeries Object'
+        for p in vars(self):
+            string += f'\n    {p}: {self.__getattribute__(p)}'
+        return string
 
     def point(self, *coordinates: int or float or None) -> pd.DataFrame:
         """
@@ -124,7 +158,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
-            opened_file = _open_by_engine(file, self.engine, self.xr_kwargs)
+            opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # extract the appropriate values from the variable
@@ -145,7 +179,7 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def range(self, min_coordinates: tuple, max_coordinates: tuple) -> pd.DataFrame:
+    def bound(self, min_coordinates: tuple, max_coordinates: tuple) -> pd.DataFrame:
         """
         Args:
             min_coordinates (tuple): a tuple containing minimum coordinates of a bounding box range- coordinates given
@@ -170,7 +204,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
-            opened_file = _open_by_engine(file, self.engine, self.xr_kwargs)
+            opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
@@ -184,7 +218,7 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def spatial(self, geom: str) -> pd.DataFrame:
+    def shape(self, geom: str) -> pd.DataFrame:
         """
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
@@ -210,7 +244,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
-            opened_file = _open_by_engine(file, self.engine, self.xr_kwargs)
+            opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
@@ -261,7 +295,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
-            opened_file = _open_by_engine(file, self.engine, self.xr_kwargs)
+            opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
@@ -318,7 +352,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
-            opened_file = _open_by_engine(file, self.engine, self.xr_kwargs)
+            opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
@@ -346,7 +380,7 @@ class TimeSeries:
         else:
             revert_engine = False
 
-        tmp_file = _open_by_engine(self.files[0], self.engine, self.xr_kwargs)
+        tmp_file = self._open_data(self.files[0])
 
         for order, coord_var in enumerate(self.dim_order):
             val1 = coords_min[order]
@@ -411,7 +445,7 @@ class TimeSeries:
             if a in SPATIAL_Y_VARS:
                 y = a
 
-        sample_data = _open_by_engine(self.files[0], self.engine, self.xr_kwargs)
+        sample_data = self._open_data(self.files[0])
         x = _array_by_engine(sample_data, x)
         y = _array_by_engine(sample_data, y)
         if self.engine != 'pygrib':
@@ -461,3 +495,45 @@ class TimeSeries:
                 return dates
         else:
             return [os.path.basename(file_path), ]
+
+    def _open_data(self, path):
+        if self.engine == 'xarray':
+            return xr.open_dataset(path, backend_kwargs=self.backend_kwargs)
+        elif self.engine == 'opendap':
+            if self.session:
+                return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
+            else:
+                return xr.open_dataset(path)
+        elif self.engine == 'nasa-opendap':
+            return xr.open_dataset(xr.backends.PydapDataStore.open(
+                path, session=setup_session(self.user, self.pswd, check_url=path)))
+        elif self.engine == 'netcdf4':
+            return nc.Dataset(path, 'r')
+        elif self.engine == 'cfgrib':
+            return xr.open_dataset(path, engine='cfgrib', backend_kwargs=self.backend_kwargs)
+        elif self.engine == 'pygrib':
+            a = pygrib.open(path)
+            return a.read()
+        elif self.engine == 'h5py':
+            return h5py.File(path, 'r')
+        elif self.engine == 'rasterio':
+            return xr.open_rasterio(path)
+        else:
+            raise ValueError(f'Unable to open file, unsupported engine: {self.engine}')
+
+    def _assign_engine(self):
+        f = self.files[0]
+        if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server
+            self.engine = 'nasa-opendap'
+        elif f.startswith('http'):  # reading from opendap
+            self.engine = 'opendap'
+        elif any(f.endswith(i) for i in NETCDF_EXTENSIONS):
+            self.engine = 'netcdf4'
+        elif any(f.endswith(i) for i in GRIB_EXTENSIONS):
+            self.engine = 'cfgrib'
+        elif any(f.endswith(i) for i in HDF_EXTENSIONS):
+            self.engine = 'h5py'
+        elif any(f.endswith(i) for i in GEOTIFF_EXTENSIONS):
+            self.engine = 'rasterio'
+        else:
+            raise ValueError(f'File is not a URL or have valid extension, engine could not be guessed: {f}')

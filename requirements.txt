@@ -9,3 +9,4 @@ cfgrib
 eccodes
 xarray
 python-dateutil
+pydap

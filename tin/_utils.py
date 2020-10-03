@@ -9,38 +9,12 @@ from dateutil.relativedelta import relativedelta
 try:
     import pygrib
 except ImportError:
-    pass
+    pygrib = None
 
-__all__ = ['_open_by_engine', '_array_by_engine', '_attr_by_engine', '_pick_engine', '_check_var_in_dataset',
-           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list']
+__all__ = ['_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_array_to_stat_list', '_delta_to_datetime',
+           '_gen_stat_list']
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-NETCDF_EXTENSIONS = ('.nc', '.nc4')
-GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
-HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
-GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
-
-
-def _open_by_engine(path: str, engine: str = None, backend_kwargs: dict = None):
-    if engine is None:
-        engine = _pick_engine(path)
-    if backend_kwargs is None:
-        backend_kwargs = dict()
-    if engine == 'xarray':
-        return xr.open_dataset(path, backend_kwargs=backend_kwargs)
-    elif engine == 'netcdf4':
-        return nc.Dataset(path, 'r')
-    elif engine == 'cfgrib':
-        return xr.open_dataset(path, engine='cfgrib', backend_kwargs=backend_kwargs)
-    elif engine == 'pygrib':
-        a = pygrib.open(path)
-        return a.read()
-    elif engine == 'h5py':
-        return h5py.File(path, 'r')
-    elif engine == 'rasterio':
-        return xr.open_rasterio(path)
-    else:
-        raise ValueError(f'Unable to open file, unsupported engine: {engine}')
 
 
 def _array_by_engine(open_file, var: str or int) -> np.array:
@@ -71,21 +45,6 @@ def _attr_by_engine(open_file, var: str, attribute: str) -> str:
         return open_file[var].attrs[attribute].decode('UTF-8')
     else:
         raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
-
-
-def _pick_engine(path: str) -> str:
-    if path.startswith('http'):  # reading from opendap
-        return 'xarray'
-    if any(path.endswith(i) for i in NETCDF_EXTENSIONS):
-        return 'netcdf4'
-    if any(path.endswith(i) for i in GRIB_EXTENSIONS):
-        return 'cfgrib'
-    elif any(path.endswith(i) for i in HDF_EXTENSIONS):
-        return 'h5py'
-    if any(path.endswith(i) for i in GEOTIFF_EXTENSIONS):
-        return 'rasterio'
-    else:
-        raise ValueError(f'File name does not match known files extensions, engine could not be guessed: {path}')
 
 
 def _check_var_in_dataset(open_file, var) -> bool:

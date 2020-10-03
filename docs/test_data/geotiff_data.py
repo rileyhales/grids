@@ -14,9 +14,9 @@ ts = tin.TimeSeries(files=files, var=var, dim_order=dim_order, strp_filename='GL
 t1 = datetime.datetime.now()
 a = ts.point(10, 10)
 t2 = datetime.datetime.now()
-b = ts.range((10, 10), (20, 20))
+b = ts.bound((10, 10), (20, 20))
 t3 = datetime.datetime.now()
-c = ts.spatial('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
+c = ts.shape('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
 t4 = datetime.datetime.now()
 
 pd.DataFrame({
