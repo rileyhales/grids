@@ -9,8 +9,8 @@ Grids: Temporal Informatics of Gridded Data
 .. image:: https://img.shields.io/pypi/v/grids
 	:target: https://pypi.org/project/grids
 	:alt: PYPI Version
-.. image:: https://readthedocs.org/projects/temporal-informatics/badge/?version=latest
-	:target: https://temporal-informatics.readthedocs.io/en/latest/?badge=latest
+.. image:: https://readthedocs.org/projects/tsgrids/badge/?version=latest
+	:target: https://tsgrids.readthedocs.io/en/latest/?badge=latest
 	:alt: Documentation Status
 
 Tools for extracting time series subsets from n-dimensional arrays in NetCDF, GRIB, HDF, and GeoTIFF formats. Time series

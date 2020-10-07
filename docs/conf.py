@@ -45,6 +45,7 @@ autodoc_mock_imports = [
     'affine',
     'geopandas',
     'PIL',
+    'pydap',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
