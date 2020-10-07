@@ -2,12 +2,12 @@
 	:maxdepth: 3
 	:numbered:
 
-********************
-Temporal Informatics
-********************
+*******************************************
+Grids: Temporal Informatics of Gridded Data
+*******************************************
 
-.. image:: https://img.shields.io/pypi/v/temporal_informatics
-	:target: https://pypi.org/project/temporal_informatics
+.. image:: https://img.shields.io/pypi/v/grids
+	:target: https://pypi.org/project/grids
 	:alt: PYPI Version
 .. image:: https://readthedocs.org/projects/temporal-informatics/badge/?version=latest
 	:target: https://temporal-informatics.readthedocs.io/en/latest/?badge=latest
@@ -24,7 +24,7 @@ can be extracted for:
 
 .. code-block:: bash
 
-	pip install temporal_informatics
+	pip install grids
 
 Example Usage
 *************
@@ -32,7 +32,7 @@ Example Usage
 .. code-block:: python
 
 	import glob
-	import temporal_informatics as tin
+	import grids
 
 	# example using GLDAS datasets (list of absolute file paths)
 	files = sorted(glob.glob('/path/to/my/spatial/data/GLDAS*.nc4'))
@@ -42,7 +42,7 @@ Example Usage
 	dim_order = ('time', 'lat', 'lon')
 
 	# create a TimeSeries class with your data points
-	ts = tin.TimeSeries(files, var, dim_order)
+	ts = grids.TimeSeries(files, var, dim_order)
 	# set option optional behavior for extracting series (see kwargs)
 	ts.interp_units = True
 
@@ -84,7 +84,7 @@ Datetime values are extracted in one of 4 ways (controlled by the :code:`interp_
 TimeSeries
 **********
 
-.. automodule:: temporal_informatics
+.. automodule:: grids
 	:members: TimeSeries
 
 Speed Test Results

@@ -77,9 +77,6 @@ class TimeSeries:
         origin_format (str): A datetime.strptime string for extracting the origin time from the units string.
         strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names.
     """
-
-    statistics = ('mean',)
-
     def __init__(self, files: list, var: str or int, dim_order: tuple, **kwargs):
         # parameters configuring how the data is interpreted
         self.files = files
@@ -92,6 +89,8 @@ class TimeSeries:
         self.fill_value = kwargs.get('fill_value', -9999.0)
         if not self.engine:
             self._assign_engine()
+        else:
+            assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
 
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', 'time')
@@ -131,9 +130,12 @@ class TimeSeries:
         return True
 
     def __str__(self):
-        string = 'tin.TimeSeries Object'
+        string = 'grids.TimeSeries Object'
         for p in vars(self):
-            string += f'\n    {p}: {self.__getattribute__(p)}'
+            if p == 'files':
+                string += f'\n\t{p}: {len(self.__getattribute__(p))}'
+            else:
+                string += f'\n\t{p}: {self.__getattribute__(p)}'
         return string
 
     def point(self, *coordinates: int or float or None) -> pd.DataFrame:

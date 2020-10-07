@@ -3,13 +3,13 @@ import glob
 
 import pandas as pd
 
-import tin as tin
+import grids
 
 files = sorted(glob.glob('/Users/riley/spatialdata/geotiff_data/*.tif'))
 print(len(files))
 var = 0
 dim_order = ('y', 'x')
-ts = tin.TimeSeries(files=files, var=var, dim_order=dim_order, strp_filename='GLDAS_NOAH025_3H.A%Y%m%d.%H00.021.nc4.tif', epsg=4326)
+ts = grids.TimeSeries(files=files, var=var, dim_order=dim_order, strp_filename='GLDAS_NOAH025_3H.A%Y%m%d.%H00.021.nc4.tif', epsg=4326)
 
 t1 = datetime.datetime.now()
 a = ts.point(10, 10)

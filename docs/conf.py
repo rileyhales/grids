@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'tin'
+project = 'grids'
 copyright = '2020, Riley Hales'
 author = 'Riley Hales'
 

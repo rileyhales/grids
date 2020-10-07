@@ -3,12 +3,12 @@ import glob
 
 import pandas as pd
 
-import tin as tin
+import grids
 
 files = sorted(glob.glob('/Users/riley/spatialdata/thredds/gldas/raw/*.nc4'))
 var = 'Tair_f_inst'
 dim_order = ('time', 'lat', 'lon')
-ts = tin.TimeSeries(files=files, var=var, dim_order=dim_order, interp_units=True, epsg=4326)
+ts = grids.TimeSeries(files=files, var=var, dim_order=dim_order, interp_units=True, epsg=4326)
 
 for engine in ('xarray', 'netcdf4', 'h5py', ):
     ts.engine = engine

@@ -3,12 +3,12 @@ import glob
 
 import pandas as pd
 
-import tin as tin
+import grids
 
 files = sorted(glob.glob('/Users/riley/Downloads/gfs_20200101.grb2') * 500)
 var = '4lftx'
 dim_order = ('latitude', 'longitude')
-ts = tin.TimeSeries(files=files, var=var, dim_order=dim_order, strp_filename='gfs_%Y%m%d.grb2', epsg=4326)
+ts = grids.TimeSeries(files=files, var=var, dim_order=dim_order, strp_filename='gfs_%Y%m%d.grb2', epsg=4326)
 ts.xr_kwargs = {'filter_by_keys': {'typeOfLevel': 'surface'}}
 
 for engine in ('cfgrib', ):
