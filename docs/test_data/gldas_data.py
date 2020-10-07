@@ -3,12 +3,12 @@ import glob
 
 import pandas as pd
 
-import tin as tin
+import grids
 
 files = sorted(glob.glob('/Users/riley/spatialdata/thredds/gldas/raw/*.nc4'))
 var = 'Tair_f_inst'
 dim_order = ('time', 'lat', 'lon')
-ts = tin.TimeSeries(files=files, var=var, dim_order=dim_order, interp_units=True, epsg=4326)
+ts = grids.TimeSeries(files=files, var=var, dim_order=dim_order, interp_units=True, epsg=4326)
 
 for engine in ('xarray', 'netcdf4', 'h5py', ):
     ts.engine = engine
@@ -18,9 +18,9 @@ for engine in ('xarray', 'netcdf4', 'h5py', ):
     t1 = datetime.datetime.now()
     ts.point(None, 10, 10)
     t2 = datetime.datetime.now()
-    ts.range((None, 10, 10), (None, 20, 20))
+    ts.bound((None, 10, 10), (None, 20, 20))
     t3 = datetime.datetime.now()
-    ts.spatial('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
+    ts.shape('/Users/riley/spatialdata/shapefiles/utah/utah.shp')
     t4 = datetime.datetime.now()
 
     pd.DataFrame({

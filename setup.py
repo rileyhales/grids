@@ -1,6 +1,6 @@
 from setuptools import setup
 
-version = '0.1'
+version = '0.2'
 
 with open('README.md', 'r') as readme:
     long_description = readme.read()
@@ -9,8 +9,8 @@ with open('requirements.txt', 'r') as req:
     install_requires = req.read().splitlines()
 
 setup(
-    name='tin',
-    packages=['tin'],
+    name='grids',
+    packages=['grids'],
     version=version,
     description='Tools for extracting time series subsets from n-dimensional arrays in several storage formats.',
     long_description=long_description,

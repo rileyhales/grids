@@ -2,12 +2,12 @@
 	:maxdepth: 3
 	:numbered:
 
-********************
-Temporal Informatics
-********************
+*******************************************
+Grids: Temporal Informatics of Gridded Data
+*******************************************
 
-.. image:: https://img.shields.io/pypi/v/temporal_informatics
-	:target: https://pypi.org/project/temporal_informatics
+.. image:: https://img.shields.io/pypi/v/grids
+	:target: https://pypi.org/project/grids
 	:alt: PYPI Version
 .. image:: https://readthedocs.org/projects/temporal-informatics/badge/?version=latest
 	:target: https://temporal-informatics.readthedocs.io/en/latest/?badge=latest
@@ -24,7 +24,7 @@ can be extracted for:
 
 .. code-block:: bash
 
-	pip install temporal_informatics
+	pip install grids
 
 Example Usage
 *************
@@ -32,7 +32,7 @@ Example Usage
 .. code-block:: python
 
 	import glob
-	import temporal_informatics as tin
+	import grids
 
 	# example using GLDAS datasets (list of absolute file paths)
 	files = sorted(glob.glob('/path/to/my/spatial/data/GLDAS*.nc4'))
@@ -42,7 +42,7 @@ Example Usage
 	dim_order = ('time', 'lat', 'lon')
 
 	# create a TimeSeries class with your data points
-	ts = tin.TimeSeries(files, var, dim_order)
+	ts = grids.TimeSeries(files, var, dim_order)
 	# set option optional behavior for extracting series (see kwargs)
 	ts.interp_units = True
 
@@ -53,13 +53,13 @@ Example Usage
 
 	# get a time series for a range of values (args are 2 tuples of coordinates
 	# None -> all time values, between 10-15 latitude, between 15 and 20 longitude
-	b = ts.range((None, 10, 15), (None, 15, 20))
+	b = ts.bound((None, 10, 15), (None, 15, 20))
 	print(b)
 
 	# get a time series within a shapefile's boundaries
 	# define raster data's EPSG, geometry will be reprojected to this before masking the rasters (see kwargs)
 	ts.epsg = 4326
-	c = ts.spatial('/path/to/my/shapefile.shp')
+	c = ts.shape('/path/to/my/shapefile.shp')
 	print(c)
 
 	# get a time series of the averages of the entire array
@@ -84,7 +84,7 @@ Datetime values are extracted in one of 4 ways (controlled by the :code:`interp_
 TimeSeries
 **********
 
-.. automodule:: temporal_informatics
+.. automodule:: grids
 	:members: TimeSeries
 
 Speed Test Results
