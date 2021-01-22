@@ -31,13 +31,18 @@ from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
 
-__all__ = ['TimeSeries', ]
+__all__ = [
+    'TimeSeries',
+    # utility functions
+    '_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_array_to_stat_list', '_delta_to_datetime',
+    '_gen_stat_list'
+]
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 RECOGNIZED_TIME_INTERVALS = ('years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds',)
 SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
 SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
-ALL_ENGINES = ('xarray', 'opendap', 'nasa-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
+ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
 NETCDF_EXTENSIONS = ('.nc', '.nc4')
 GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
 HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
@@ -52,7 +57,7 @@ class TimeSeries:
 
     Args:
         files (list): A list (even if len==1) of either absolute file paths to netcdf, grib, hdf5, or geotiff files or
-            urls to an OPENDAP service (but beware the data transfer speed bottleneck)
+            urls to an OPeNDAP service (but beware the data transfer speed bottleneck)
         var (str or int): The name of a variable as it is stored in the file (e.g. often 'temp' or 'T' instead of
             Temperature) or the band number if you are using grib files and you specify the engine as pygrib. If the var
             is contained in a group, include the group name as a unix style path e.g. 'group_name/var'
@@ -76,7 +81,42 @@ class TimeSeries:
             "days since 2000-01-01 00:00:00".
         origin_format (str): A datetime.strptime string for extracting the origin time from the units string.
         strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names.
+
+    Methods:
+        point: Extracts a time series at a point for a given series of coordinate values
+        bound: Extracts a time series of values with a bounding box for each requested statistic
+        shape: Extracts a time series of values on a line or within a polygon for each requested statistic
+        masks: Extracts a time series of values from the array for a given mask array for each requested statistic
+        stats: Extracts a time series of stats of all values in the array for each requested statistic
+
+    Example:
+        import grids
+
+        # collect the input information
+        files = ['/path/to/file/1.nc', '/path/to/file/2.nc', '/path/to/file/3.nc', ]
+        var = 'name_of_my_variable'
+        dim_order = ('name', 'of', 'dimensions', 'of', 'variable')
+
+        # combine these into an instance of the TimeSeries class
+        series = grids.TimeSeries(files=files, var=var, dim_order=dim_order)
+        # call the function to query the time series subset you're interested in
+        point_time_series = series.point(coords*)
+
+    Example:
+        # current GFS 1/4 degree forecast time series
+        files = ['https://tds.scigw.unidata.ucar.edu/thredds/dodsC/grib/NCEP/GFS/Global_0p25deg/Best']
+        # Pick a variable
+        var = 'Temperature_surface'
+        # time, altitude-ish variable, latitude, longitude (from GFS docs and by inspecting grib file)
+        dim_order = ('time1', 'lat', 'lon')
+
+        # create the TimeSeries object
+        series = TimeSeries(files=files, var=var, dim_order=dim_order)
+        # query the temperature at Provo Utah
+        temp_forecast = series.point(None, 40.25, -111.65 + 360)
+
     """
+
     def __init__(self, files: list, var: str or int, dim_order: tuple, **kwargs):
         # parameters configuring how the data is interpreted
         self.files = files
@@ -281,6 +321,7 @@ class TimeSeries:
     def masks(self, mask: np.array) -> pd.DataFrame:
         """
         Subsets the source arrays with any mask matching the dimensions of the source data. Useful when you want to
+        generate your own mask.
 
         Args:
             mask (np.array): a numpy array of boolean values, the same shape as the source data files (not including the
@@ -439,13 +480,14 @@ class TimeSeries:
         return tuple(slices)
 
     def _create_spatial_mask_array(self, geom: str, ) -> np.ma:
-        x = None
-        y = None
+        x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
                 x = a
-            if a in SPATIAL_Y_VARS:
+            elif a in SPATIAL_Y_VARS:
                 y = a
+        if x is None or y is None:
+            raise ValueError('Unable to determine x and y dimensions')
 
         sample_data = self._open_data(self.files[0])
         x = _array_by_engine(sample_data, x)
@@ -475,8 +517,7 @@ class TimeSeries:
                 return tvals
             if self.unit_str is None:
                 return _delta_to_datetime(tvals, _attr_by_engine(opened_file, self.t_var, 'units'), self.origin_format)
-            else:
-                return _delta_to_datetime(tvals, self.unit_str, self.origin_format)
+            return _delta_to_datetime(tvals, self.unit_str, self.origin_format)
 
         elif self.strp_filename:  # strip the datetime from the file name
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
@@ -502,11 +543,14 @@ class TimeSeries:
         if self.engine == 'xarray':
             return xr.open_dataset(path, backend_kwargs=self.backend_kwargs)
         elif self.engine == 'opendap':
-            if self.session:
-                return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
-            else:
-                return xr.open_dataset(path)
-        elif self.engine == 'nasa-opendap':
+            try:
+                if self.session:
+                    return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
+                else:
+                    return xr.open_dataset(path)
+            except Exception:
+                raise ConnectionRefusedError(f'Couldn\' connect to dataset {path}. Does it exist? Need credentials?')
+        elif self.engine == 'auth-opendap':
             return xr.open_dataset(xr.backends.PydapDataStore.open(
                 path, session=setup_session(self.user, self.pswd, check_url=path)))
         elif self.engine == 'netcdf4':
@@ -525,8 +569,8 @@ class TimeSeries:
 
     def _assign_engine(self):
         f = self.files[0]
-        if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server
-            self.engine = 'nasa-opendap'
+        if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server (requires auth)
+            self.engine = 'auth-opendap'
         elif f.startswith('http'):  # reading from opendap
             self.engine = 'opendap'
         elif any(f.endswith(i) for i in NETCDF_EXTENSIONS):
