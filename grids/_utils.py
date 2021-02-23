@@ -17,9 +17,9 @@ __all__ = ['_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_arr
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 
 
-def _array_by_engine(open_file, var: str or int) -> np.array:
+def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
     if isinstance(open_file, xr.Dataset):  # xarray, cfgrib
-        return open_file[var].data
+        return open_file[var][slices]
     elif isinstance(open_file, xr.DataArray):  # rasterio
         if isinstance(var, int):
             return open_file.data[var]
