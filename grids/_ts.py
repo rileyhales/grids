@@ -543,10 +543,8 @@ class TimeSeries:
                 if self.session:
                     return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
                 else:
-                    print(path)
                     return xr.open_dataset(path)
             except Exception as e:
-                print(e)
                 raise ConnectionRefusedError(f'Couldn\'t connect to dataset {path}. Does it exist? Need credentials?')
         elif self.engine == 'auth-opendap':
             return xr.open_dataset(xr.backends.PydapDataStore.open(
