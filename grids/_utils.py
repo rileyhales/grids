@@ -19,13 +19,13 @@ ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 
 def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
     if isinstance(open_file, xr.Dataset):  # xarray, cfgrib
-        return open_file[var][slices]
+        return open_file[var][slices].data
     elif isinstance(open_file, xr.DataArray):  # rasterio
         if isinstance(var, int):
-            return open_file.data[var]
-        return open_file[var].data
+            return open_file.data[var][slices]
+        return open_file[var].data[slices]
     elif isinstance(open_file, nc.Dataset):  # netcdf4
-        return open_file[var][:]
+        return open_file[var][slices]
     elif isinstance(open_file, list):  # pygrib
         return open_file[var].values
     elif isinstance(open_file, h5py.File) or isinstance(open_file, h5py.Dataset):  # h5py
