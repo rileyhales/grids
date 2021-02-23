@@ -9,4 +9,5 @@ pandas
 pydap
 python-dateutil
 rasterio
+requests
 xarray

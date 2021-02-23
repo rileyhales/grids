@@ -103,16 +103,12 @@ class TimeSeries:
         point_time_series = series.point(coords*)
 
     Example:
-        # current GFS 1/4 degree forecast time series
+        # current GFS 1/4 degree forecast time series for air temperature in Provo Utah
         files = ['https://tds.scigw.unidata.ucar.edu/thredds/dodsC/grib/NCEP/GFS/Global_0p25deg/Best']
-        # Pick a variable
         var = 'Temperature_surface'
-        # time, altitude-ish variable, latitude, longitude (from GFS docs and by inspecting grib file)
         dim_order = ('time1', 'lat', 'lon')
 
-        # create the TimeSeries object
         series = TimeSeries(files=files, var=var, dim_order=dim_order)
-        # query the temperature at Provo Utah
         temp_forecast = series.point(None, 40.25, -111.65 + 360)
 
     """
@@ -204,7 +200,7 @@ class TimeSeries:
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # extract the appropriate values from the variable
-            vs = _array_by_engine(opened_file, self.var)[slices]
+            vs = _array_by_engine(opened_file, self.var, slices)
             if vs.ndim == 0:
                 if vs == self.fill_value:
                     vs = np.nan
@@ -250,7 +246,7 @@ class TimeSeries:
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
-            vs = _array_by_engine(opened_file, self.var)[slices]
+            vs = _array_by_engine(opened_file, self.var, slices)
             vs[vs == self.fill_value] = np.nan
             for stat in self.statistics:
                 results[stat] += _array_to_stat_list(vs, stat)
@@ -548,8 +544,8 @@ class TimeSeries:
                     return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
                 else:
                     return xr.open_dataset(path)
-            except Exception:
-                raise ConnectionRefusedError(f'Couldn\' connect to dataset {path}. Does it exist? Need credentials?')
+            except Exception as e:
+                raise ConnectionRefusedError(f'Couldn\'t connect to dataset {path}. Does it exist? Need credentials?')
         elif self.engine == 'auth-opendap':
             return xr.open_dataset(xr.backends.PydapDataStore.open(
                 path, session=setup_session(self.user, self.pswd, check_url=path)))
