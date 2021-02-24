@@ -5,3 +5,5 @@ dist/
 *.egg-info/
 .DS_Store
 .pypirc
+grids/devtests
+grids/devtests
