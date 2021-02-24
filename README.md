@@ -7,4 +7,4 @@ A python tool for extracting time series subsets from multi-dimensional data arr
 
 [Read documentation on ReadTheDocs](https://tsgrids.readthedocs.io/en/stable/)
 
-[View a live demo](https://gist.github.com/rileyhales/7783b521335c875b056adff4e22737d0)
+[View a live demo](https://gist.github.com/rileyhales/79761303df16127e0195e11425fc2d9d)

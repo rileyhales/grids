@@ -28,7 +28,7 @@ can be extracted for:
 
 Interactive Demo
 ****************
-View a live `demo python notebook <https://gist.github.com/rileyhales/7783b521335c875b056adff4e22737d0>`_ using Google Colaboratory and GitHub Gists.
+View a live `demo python notebook <https://gist.github.com/rileyhales/79761303df16127e0195e11425fc2d9d>`_ using Google Colaboratory and GitHub Gists.
 
 Example Usage
 *************
