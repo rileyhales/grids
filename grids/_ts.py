@@ -71,7 +71,6 @@ class TimeSeries:
         engine (str): the python package used to power the file reading. Defaults to best for the type of input data
         xr_kwargs (dict): A dictionary of kwargs that you might need when opening complex grib files with xarray
         fill_value (int): The value used for filling no_data spaces in the source file's array. Default: -9999.0
-        epsg (str): an EPSG number, e.g. 4326 (the default), for the raster data's CRS. Required for spatial series
         interp_units (bool): If your data conforms to the CF NetCDF standard for time data, choose True to
             convert the values in the time variable to datetime strings in the pandas output. The units string for the
             time variable of each file is checked separately unless you specify it in the unit_str parameter.
@@ -83,11 +82,11 @@ class TimeSeries:
         strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names.
 
     Methods:
-        point: Extracts a time series at a point for a given series of coordinate values
+        point: Extracts a time series of values at a point for a given series of coordinate values
         bound: Extracts a time series of values with a bounding box for each requested statistic
         shape: Extracts a time series of values on a line or within a polygon for each requested statistic
         masks: Extracts a time series of values from the array for a given mask array for each requested statistic
-        stats: Extracts a time series of stats of all values in the array for each requested statistic
+        stats: Extracts a time series of values which are requested statistics to summarize the array values
 
     Example:
         import grids
@@ -121,12 +120,26 @@ class TimeSeries:
 
         # optional parameters describing how to access the data
         self.engine = kwargs.get('engine', False)
-        self.xr_kwargs = kwargs.get('xr_kwargs', None)
-        self.fill_value = kwargs.get('fill_value', -9999.0)
         if not self.engine:
-            self._assign_engine()
+            f = files[0]
+            if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server (requires auth)
+                self.engine = 'auth-opendap'
+            elif f.startswith('http'):  # reading from opendap
+                self.engine = 'opendap'
+            elif any(f.endswith(i) for i in NETCDF_EXTENSIONS):
+                self.engine = 'netcdf4'
+            elif any(f.endswith(i) for i in GRIB_EXTENSIONS):
+                self.engine = 'cfgrib'
+            elif any(f.endswith(i) for i in HDF_EXTENSIONS):
+                self.engine = 'h5py'
+            elif any(f.endswith(i) for i in GEOTIFF_EXTENSIONS):
+                self.engine = 'rasterio'
+            else:
+                raise ValueError(f'Could not guess appropriate file reading ending, please specify it')
         else:
             assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
+        self.xr_kwargs = kwargs.get('xr_kwargs', None)
+        self.fill_value = kwargs.get('fill_value', -9999.0)
 
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', 'time')
@@ -137,9 +150,6 @@ class TimeSeries:
 
         # optional parameter modifying which statistics to process
         self.statistics = _gen_stat_list(kwargs.get('statistics', ('mean',)))
-
-        # optional parameter helping to handle spatial data series
-        self.epsg = kwargs.get('epsg', False)
 
         # optional authentication for remote datasets
         self.user = kwargs.get('user', None)
@@ -185,7 +195,7 @@ class TimeSeries:
         Returns:
             pandas.DataFrame with an index, a column named datetime, and a column named values.
         """
-        assert len(self.dim_order) == len(coordinates)
+        assert len(self.dim_order) == len(coordinates), 'Specify 1 coordinate for each dimension of the array'
 
         # make the return item
         results = dict(datetime=[], values=[])
@@ -227,7 +237,8 @@ class TimeSeries:
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
-        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates)
+        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates),\
+            'Specify 1 min and 1 max coordinate for each dimension'
 
         # make the return item
         results = dict(datetime=[])
@@ -261,14 +272,12 @@ class TimeSeries:
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
         Args:
-            geom (str): path to any spatial geometry file, such as a shapefile or geojson, which can be read by
-                geopandas. You also need to specify the source raster's CRS string with the epsg parameter.
+            geom (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
-        # verify that a crs has been specified
-        if not self.epsg:
-            raise ValueError('An epsg has not been specified for the source data. Please specify with TimeSeries.epsg')
+        if not len(self.dim_order) == 3:
+            raise RuntimeError('For now, you can only extract by polygon if the data is exactly 3 dimensional')
 
         # make the return item
         results = dict(datetime=[])
@@ -283,30 +292,22 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            new_time_steps = list(self._handle_time_steps(opened_file, file))
+            num_time_steps = len(new_time_steps)
+            results['datetime'] += new_time_steps
+
+            slices = [slice(None), ] * len(self.dim_order)
+            time_index = self.dim_order.index(self.t_var)
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
-            vals = _array_by_engine(opened_file, self.var)
-            vals[vals == self.fill_value] = np.nan
-
-            # if the dimensions are the same, apply the mask
-            if vals.ndim == 2:
+            for i in range(num_time_steps):
+                slices[time_index] = slice(i, i + 1)
+                vals = _array_by_engine(opened_file, self.var, tuple(slices))
+                vals[vals == self.fill_value] = np.nan
+                vals = np.flip(vals, axis=0)
                 vals = np.where(mask, vals, np.nan).squeeze()
                 for stat in self.statistics:
                     results[stat] += _array_to_stat_list(vals, stat)
-            # otherwise, iterate over the time dimension
-            elif vals.ndim == 3:
-                if self.t_var in self.dim_order:
-                    # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
-                    for time_step in np.rollaxis(vals, self.dim_order.index(self.t_var)):
-                        time_step = np.flip(time_step, axis=0)
-                        time_step = np.where(mask, time_step, np.nan).squeeze()
-                        for stat in self.statistics:
-                            results[stat] += _array_to_stat_list(time_step, stat)
-                else:
-                    raise RuntimeError('3D gridded data incompatible with 2D spatial mask')
-            else:
-                raise RuntimeError(f'Wrong dimensions. mask dims: {mask.ndim}, data\'s dims: {vals.ndim}, file: {file}')
 
             if self.engine != 'pygrib':
                 opened_file.close()
@@ -498,11 +499,11 @@ class TimeSeries:
             y = y[:, 0]
 
         # read the shapefile
-        shp_file = geopandas.read_file(geom).to_crs(epsg=self.epsg)
+        shp_file = geopandas.read_file(geom)
         # creates a binary, boolean mask of the shapefile in it's crs over the affine transformation area
         mask = rasterio.features.geometry_mask(shp_file.geometry,
                                                (y.shape[0], x.shape[0],),
-                                               affine.Affine(x[1] - x[0], 0, x.min(), 0, y[0] - y[1], y.max()),
+                                               affine.Affine(x[1] - x[0], 0, x.min(), 0, y[1] - y[0], y.max()),
                                                invert=True)
         return mask
 
@@ -562,20 +563,3 @@ class TimeSeries:
             return xr.open_rasterio(path)
         else:
             raise ValueError(f'Unable to open file, unsupported engine: {self.engine}')
-
-    def _assign_engine(self):
-        f = self.files[0]
-        if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server (requires auth)
-            self.engine = 'auth-opendap'
-        elif f.startswith('http'):  # reading from opendap
-            self.engine = 'opendap'
-        elif any(f.endswith(i) for i in NETCDF_EXTENSIONS):
-            self.engine = 'netcdf4'
-        elif any(f.endswith(i) for i in GRIB_EXTENSIONS):
-            self.engine = 'cfgrib'
-        elif any(f.endswith(i) for i in HDF_EXTENSIONS):
-            self.engine = 'h5py'
-        elif any(f.endswith(i) for i in GEOTIFF_EXTENSIONS):
-            self.engine = 'rasterio'
-        else:
-            raise ValueError(f'File is not a URL or have valid extension, engine could not be guessed: {f}')

@@ -5,6 +5,6 @@
      
 A python tool for extracting time series subsets from multi-dimensional data arrays developed by Riley Hales as part of a Master's Thesis in Civil and Environmental Engineering at Brigham Young University.
 
-Please refer to the [documentation](https://tsgrids.readthedocs.io/en/stable/)
+[Read documentation on ReadTheDocs](https://tsgrids.readthedocs.io/en/stable/)
 
-# Examples
+[View a live demo](https://gist.github.com/rileyhales/7783b521335c875b056adff4e22737d0)
