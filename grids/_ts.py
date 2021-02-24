@@ -269,6 +269,8 @@ class TimeSeries:
         # verify that a crs has been specified
         if not self.epsg:
             raise ValueError('An epsg has not been specified for the source data. Please specify with TimeSeries.epsg')
+        if not len(self.dim_order) == 3:
+            raise RuntimeError('For now, you can only extract by polygon if the data is exactly 3 dimensional')
 
         # make the return item
         results = dict(datetime=[])
@@ -283,9 +285,18 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            new_time_steps = list(self._handle_time_steps(opened_file, file))
+            num_time_steps = len(new_time_steps)
+            results['datetime'] += new_time_steps
+
+            slices = [slice(None), ] * len(self.dim_order)
+            time_index = self.dim_order.index(self.t_var)
 
             # slice the variable's array, returns array with shape corresponding to dimension order and size
+            for i in range(num_time_steps):
+                slices[time_index] = i
+                vals = _array_by_engine(opened_file, self.var, slices)
+
             vals = _array_by_engine(opened_file, self.var)
             vals[vals == self.fill_value] = np.nan
 
