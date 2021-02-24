@@ -27,9 +27,9 @@ def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) ->
     elif isinstance(open_file, nc.Dataset):  # netcdf4
         return open_file[var][slices]
     elif isinstance(open_file, list):  # pygrib
-        return open_file[var].values
+        return open_file[var].values[slices]
     elif isinstance(open_file, h5py.File) or isinstance(open_file, h5py.Dataset):  # h5py
-        return open_file[var][:]  # might need to use [...] for string data
+        return open_file[var][slices]  # might need to use [...] for string data
     else:
         raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
 
