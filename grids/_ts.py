@@ -69,6 +69,9 @@ class TimeSeries:
             Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
             Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         engine (str): the python package used to power the file reading. Defaults to best for the type of input data
+        user (str): a username used for authenticating remote datasets, if required by your remote data source
+        pswd (str): a password used for authenticating remote datasets, if required by your remote data source
+        session (requests.Session): a requests Session object preloaded with credentials/tokens for authentication
         xr_kwargs (dict): A dictionary of kwargs that you might need when opening complex grib files with xarray
         fill_value (int): The value used for filling no_data spaces in the source file's array. Default: -9999.0
         interp_units (bool): If your data conforms to the CF NetCDF standard for time data, choose True to
