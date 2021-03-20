@@ -186,7 +186,7 @@ class TimeSeries:
         return string
 
     def point(self,
-              *coordinates: int or float or None) -> pd.DataFrame:
+              *coordinates: int or float or None, ) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
 
@@ -342,7 +342,8 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def masks(self, mask: np.array) -> pd.DataFrame:
+    def masks(self,
+              mask: np.array, ) -> pd.DataFrame:
         """
         Subsets the source arrays with any mask matching the dimensions of the source data. Useful when you want to
         generate your own mask.
@@ -394,7 +395,8 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def stats(self, *statistics) -> pd.DataFrame:
+    def stats(self,
+              *statistics: str or tuple, ) -> pd.DataFrame:
         """
         Computes statistics for the entire array of data contained in each file.
 
