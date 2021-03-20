@@ -31,15 +31,9 @@ from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
 
-__all__ = [
-    'TimeSeries',
-    # utility functions
-    '_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_array_to_stat_list', '_delta_to_datetime',
-    '_gen_stat_list'
-]
+__all__ = ['TimeSeries', ]
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-RECOGNIZED_TIME_INTERVALS = ('years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds',)
 SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
 SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
 ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
@@ -65,7 +59,7 @@ class TimeSeries:
 
     Keyword Args:
         t_var (str): Name of the time variable if it is used in the files. Default: 'time'
-        statistics (list or str): How to reduce arrays of values to a single scalar value for the timeseries.
+        statistics (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
             Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
             Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         engine (str): the python package used to power the file reading. Defaults to best for the type of input data
@@ -154,6 +148,10 @@ class TimeSeries:
         # optional parameter modifying which statistics to process
         self.statistics = _gen_stat_list(kwargs.get('statistics', ('mean',)))
 
+        # option parameters describing behavior for timeseries with vector data (cache to make scripts concise)
+        self.behavior = kwargs.get('behavior', 'dissolve')
+        self.labelby = kwargs.get('labelby', None)
+
         # optional authentication for remote datasets
         self.user = kwargs.get('user', None)
         self.pswd = kwargs.get('pswd', None)
@@ -179,7 +177,7 @@ class TimeSeries:
         return True
 
     def __str__(self):
-        string = 'grids.TimeSeries Object'
+        string = 'grids.TimeSeries'
         for p in vars(self):
             if p == 'files':
                 string += f'\n\t{p}: {len(self.__getattribute__(p))}'
@@ -187,7 +185,8 @@ class TimeSeries:
                 string += f'\n\t{p}: {self.__getattribute__(p)}'
         return string
 
-    def point(self, *coordinates: int or float or None) -> pd.DataFrame:
+    def point(self,
+              *coordinates: int or float or None, ) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
 
@@ -230,18 +229,27 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def bound(self, min_coordinates: tuple, max_coordinates: tuple) -> pd.DataFrame:
+    def bound(self,
+              min_coordinates: tuple,
+              max_coordinates: tuple,
+              statistics: str or tuple = None, ) -> pd.DataFrame:
         """
         Args:
             min_coordinates (tuple): a tuple containing minimum coordinates of a bounding box range- coordinates given
                 in order of the dimensions of the source arrays.
             max_coordinates (tuple): a tuple containing maximum coordinates of a bounding box range- coordinates given
                 in order of the dimensions of the source arrays.
+            statistics (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
+                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
+                Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
-        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates),\
+        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates), \
             'Specify 1 min and 1 max coordinate for each dimension'
+
+        # handle the optional arguments
+        self.statistics = _gen_stat_list(statistics) if statistics is not None else self.statistics
 
         # make the return item
         results = dict(datetime=[])
@@ -270,26 +278,39 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def shape(self, geom: str) -> pd.DataFrame:
+    def shape(self,
+              vector: str,
+              behavior: str = None,
+              labelby: str = None,
+              statistics: str or tuple = None, ) -> pd.DataFrame:
         """
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
         Args:
-            geom (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
+            vector (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
+            behavior (str): determines how the vector data is used to mask the arrays. Options are: dissolve, features
+                - dissolve: treats all features as if they were 1 feature and masks the entire set of polygons in 1 grid
+                - features: treats each feature as a separate entity, must specify an attribute shared by each feature
+                with unique values for each feature used to label the resulting series
+            labelby: The name of the attribute in the vector data features to label the several outputs
+            statistics (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
+                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
+                Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
         if not len(self.dim_order) == 3:
-            raise RuntimeError('For now, you can only extract by polygon if the data is exactly 3 dimensional')
+            raise RuntimeError('You can only extract by polygon if the data is exactly 3 dimensional: time, y, x')
+
+        # cache the behavior and organization parameters
+        self.behavior = behavior if behavior is not None else self.behavior
+        self.labelby = labelby if labelby is not None else self.labelby
+        self.statistics = _gen_stat_list(statistics) if statistics is not None else self.statistics
 
         # make the return item
         results = dict(datetime=[])
 
-        # add a list for each stat requested
-        for stat in self.statistics:
-            results[stat] = []
-
-        mask = self._create_spatial_mask_array(geom)
+        masks = self._create_spatial_mask_array(vector)
 
         # iterate over each file extracting the value and time for each
         for file in self.files:
@@ -306,11 +327,14 @@ class TimeSeries:
             for i in range(num_time_steps):
                 slices[time_index] = slice(i, i + 1)
                 vals = _array_by_engine(opened_file, self.var, tuple(slices))
-                vals[vals == self.fill_value] = np.nan
                 vals = np.flip(vals, axis=0)
-                vals = np.where(mask, vals, np.nan).squeeze()
-                for stat in self.statistics:
-                    results[stat] += _array_to_stat_list(vals, stat)
+                for mask in masks:
+                    masked_vals = np.where(mask[1], vals, np.nan).squeeze()
+                    masked_vals[masked_vals == self.fill_value] = np.nan
+                    for stat in self.statistics:
+                        if f'{mask[0]}-{stat}' not in results.keys():
+                            results[f'{mask[0]}-{stat}'] = []
+                        results[f'{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
 
             if self.engine != 'pygrib':
                 opened_file.close()
@@ -318,7 +342,8 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def masks(self, mask: np.array) -> pd.DataFrame:
+    def masks(self,
+              mask: np.array, ) -> pd.DataFrame:
         """
         Subsets the source arrays with any mask matching the dimensions of the source data. Useful when you want to
         generate your own mask.
@@ -370,7 +395,8 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def stats(self, *statistics) -> pd.DataFrame:
+    def stats(self,
+              *statistics: str or tuple, ) -> pd.DataFrame:
         """
         Computes statistics for the entire array of data contained in each file.
 
@@ -479,7 +505,7 @@ class TimeSeries:
 
         return tuple(slices)
 
-    def _create_spatial_mask_array(self, geom: str, ) -> np.ma:
+    def _create_spatial_mask_array(self, vector: str, ) -> np.ma:
         x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
@@ -502,13 +528,29 @@ class TimeSeries:
             y = y[:, 0]
 
         # read the shapefile
-        shp_file = geopandas.read_file(geom)
-        # creates a binary, boolean mask of the shapefile in it's crs over the affine transformation area
-        mask = rasterio.features.geometry_mask(shp_file.geometry,
-                                               (y.shape[0], x.shape[0],),
-                                               affine.Affine(x[1] - x[0], 0, x.min(), 0, y[1] - y[0], y.max()),
-                                               invert=True)
-        return mask
+        vector_gdf = geopandas.read_file(vector)
+        vector_gdf = vector_gdf.to_crs(epsg=4326)
+
+        # set up the variables to creating and storing masks
+        masks = []
+        gridshape = (y.shape[0], x.shape[0],)
+        affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
+
+        # creates a binary, boolean mask of the shapefile
+        # in it's crs, over the affine transform area, for a certain masking behavior
+        if self.behavior == 'dissolve':
+            masks.append(
+                ('featuremask',
+                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+            )
+        elif self.behavior == 'features':
+            for idx, row in vector_gdf.iterrows():
+                masks.append(
+                    (row[self.labelby],
+                     rasterio.features.geometry_mask(
+                         geopandas.GeoSeries(row.geometry), gridshape, affinetransform, invert=True),)
+                )
+        return masks
 
     def _handle_time_steps(self, opened_file, file_path):
         if self.interp_units:  # convert the time variable array's numbers to datetime representations
