@@ -31,12 +31,7 @@ from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
 
-__all__ = [
-    'TimeSeries',
-    # utility functions
-    '_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_array_to_stat_list', '_delta_to_datetime',
-    '_gen_stat_list'
-]
+__all__ = ['TimeSeries', ]
 
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
 RECOGNIZED_TIME_INTERVALS = ('years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds',)
@@ -154,6 +149,10 @@ class TimeSeries:
         # optional parameter modifying which statistics to process
         self.statistics = _gen_stat_list(kwargs.get('statistics', ('mean',)))
 
+        # option parameters describing behavior for timeseries with vector data (cache to make scripts concise)
+        self.behavior = kwargs.get('behavior', 'dissolved')
+        self.organizedby = kwargs.get('organizedby', None)
+
         # optional authentication for remote datasets
         self.user = kwargs.get('user', None)
         self.pswd = kwargs.get('pswd', None)
@@ -240,7 +239,7 @@ class TimeSeries:
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
-        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates),\
+        assert len(self.dim_order) == len(min_coordinates) == len(max_coordinates), \
             'Specify 1 min and 1 max coordinate for each dimension'
 
         # make the return item
@@ -270,26 +269,33 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def shape(self, geom: str) -> pd.DataFrame:
+    def shape(self, vector: str, behavior: str = None, organizedby: str = None) -> pd.DataFrame:
         """
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
         Args:
-            geom (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
+            vector (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
+            behavior (str): sets how to generate masks. Options are:
+                dissolved- treats all features as if they were 1 feature and masks the entire set of polygons
+                areaweighted- handles all features as 1 but weights each feature by its area
+                features- treats each feature as a separate entity, must specify an attribute shared by each feature to
+                 use as a label for the time series results of each feature.
+            organizedby: The name of the attribute in the vector data features to label the several outputs
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
         if not len(self.dim_order) == 3:
-            raise RuntimeError('For now, you can only extract by polygon if the data is exactly 3 dimensional')
+            raise RuntimeError('You can only extract by polygon if the data is exactly 3 dimensional: time, y, x')
+
+        # cache the behavior and organization parameters
+        self.behavior = behavior if behavior is not None else self.behavior
+        self.organizedby = organizedby if organizedby is not None else self.organizedby
+        # todo self._assert_valid_arguments
 
         # make the return item
         results = dict(datetime=[])
 
-        # add a list for each stat requested
-        for stat in self.statistics:
-            results[stat] = []
-
-        mask = self._create_spatial_mask_array(geom)
+        masks = self._create_spatial_mask_array(vector)
 
         # iterate over each file extracting the value and time for each
         for file in self.files:
@@ -306,11 +312,14 @@ class TimeSeries:
             for i in range(num_time_steps):
                 slices[time_index] = slice(i, i + 1)
                 vals = _array_by_engine(opened_file, self.var, tuple(slices))
-                vals[vals == self.fill_value] = np.nan
                 vals = np.flip(vals, axis=0)
-                vals = np.where(mask, vals, np.nan).squeeze()
-                for stat in self.statistics:
-                    results[stat] += _array_to_stat_list(vals, stat)
+                for mask in masks:
+                    masked_vals = np.where(mask[1], vals, np.nan).squeeze()
+                    masked_vals[masked_vals == self.fill_value] = np.nan
+                    for stat in self.statistics:
+                        if f'{mask[0]}-{stat}' not in results.keys():
+                            results[f'{mask[0]}-{stat}'] = []
+                        results[f'{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
 
             if self.engine != 'pygrib':
                 opened_file.close()
@@ -479,7 +488,7 @@ class TimeSeries:
 
         return tuple(slices)
 
-    def _create_spatial_mask_array(self, geom: str, ) -> np.ma:
+    def _create_spatial_mask_array(self, vector: str, ) -> np.ma:
         x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
@@ -502,13 +511,29 @@ class TimeSeries:
             y = y[:, 0]
 
         # read the shapefile
-        shp_file = geopandas.read_file(geom)
-        # creates a binary, boolean mask of the shapefile in it's crs over the affine transformation area
-        mask = rasterio.features.geometry_mask(shp_file.geometry,
-                                               (y.shape[0], x.shape[0],),
-                                               affine.Affine(x[1] - x[0], 0, x.min(), 0, y[1] - y[0], y.max()),
-                                               invert=True)
-        return mask
+        vector_gdf = geopandas.read_file(vector)
+        vector_gdf = vector_gdf.to_crs(epsg=4326)
+
+        # set up the variables to creating and storing masks
+        masks = []
+        gridshape = (y.shape[0], x.shape[0],)
+        affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
+
+        # creates a binary, boolean mask of the shapefile
+        # in it's crs, over the affine transform area, for a certain masking behavior
+        if self.behavior == 'dissolved':
+            masks.append(
+                ('featuremask',
+                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+            )
+        elif self.behavior == 'features':
+            for idx, row in vector_gdf.iterrows():
+                masks.append(
+                    (row[self.organizedby],
+                     rasterio.features.geometry_mask(
+                         geopandas.GeoSeries(row.geometry), gridshape, affinetransform, invert=True),)
+                )
+        return masks
 
     def _handle_time_steps(self, opened_file, file_path):
         if self.interp_units:  # convert the time variable array's numbers to datetime representations
