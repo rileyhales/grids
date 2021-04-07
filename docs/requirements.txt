@@ -1,3 +1,16 @@
 sphinx
 sphinx_rtd_theme
 pandas
+rasterio
+rasterstats
+netCDF4
+python-dateuti
+numpy
+pygrib
+pyproj
+xarray
+h5py
+affine
+geopandas
+PIL
+pydap

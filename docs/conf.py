@@ -13,7 +13,7 @@ copyright = '2021, Riley Hales'
 author = 'Riley Hales'
 
 # The full version, including alpha/beta/rc tags
-release = '0.4'
+release = '0.5'
 master_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
@@ -31,22 +31,7 @@ extensions = [
 autodoc_default_options = {
     'member-order': 'bysource',
 }
-autodoc_mock_imports = [
-    'rasterio',
-    'rasterstats',
-    'netCDF4',
-    'dateutil',  #'python-dateutil',
-    'numpy',
-    'pandas',
-    'pygrib',
-    'pyproj',
-    'xarray',
-    'h5py',
-    'affine',
-    'geopandas',
-    'PIL',
-    'pydap',
-]
+autodoc_mock_imports = []
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
