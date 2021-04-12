@@ -4,7 +4,7 @@ pandas
 rasterio
 rasterstats
 netCDF4
-python-dateuti
+python-dateutil
 numpy
 pygrib
 pyproj
