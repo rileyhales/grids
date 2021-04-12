@@ -12,5 +12,5 @@ xarray
 h5py
 affine
 geopandas
-PIL
+pillow
 pydap
