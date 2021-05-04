@@ -583,7 +583,7 @@ class TimeSeries:
 
     def _open_data(self, path):
         if self.engine == 'xarray':
-            return xr.open_dataset(path, backend_kwargs=self.backend_kwargs)
+            return xr.open_dataset(path, backend_kwargs=self.xr_kwargs)
         elif self.engine == 'opendap':
             try:
                 if self.session:
@@ -598,7 +598,7 @@ class TimeSeries:
         elif self.engine == 'netcdf4':
             return nc.Dataset(path, 'r')
         elif self.engine == 'cfgrib':
-            return xr.open_dataset(path, engine='cfgrib', backend_kwargs=self.backend_kwargs)
+            return xr.open_dataset(path, engine='cfgrib', backend_kwargs=self.xr_kwargs)
         elif self.engine == 'pygrib':
             a = pygrib.open(path)
             return a.read()

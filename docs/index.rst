@@ -97,5 +97,5 @@ Speed Test Results
 ******************
 
 .. csv-table::
-    :file: test_data/speed_test_times.csv
+    :file: speed_test_times.csv
     :header-rows: 1

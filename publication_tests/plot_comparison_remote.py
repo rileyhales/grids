@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-df = pd.read_csv('speed_test_times.csv')
+df = pd.read_csv('../docs/speed_test_times.csv')
 df.index = df['engine']
 layout = go.Layout(
     title='Time Series Extraction Time From Web Service',

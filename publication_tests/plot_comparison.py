@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-df = pd.read_csv('speed_test_times.csv')
+df = pd.read_csv('../docs/speed_test_times.csv')
 df.index = df['engine']
 del df['engine'], df['point'], df['range'], df['shape'], df['count'],
 x = ['Point Series', 'Bounding Box Series', 'Polygon Series']
