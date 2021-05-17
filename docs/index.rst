@@ -22,8 +22,20 @@ can be extracted for:
 #. Masks - any irregularly shaped subset of the array which you can create a binary mask array for
 #. Statistical summaries - of the entire array
 
+Installation
+************
 .. code-block:: bash
 
+    pip install grids
+
+Some of the dependencies for grids depend on system libraries and binaries which are not installed using a pip install.
+The easiest solution is to conda install the dependency whose system dependencies you need e.g. cfgrib or rasterio.
+You should not need to do this often.
+
+.. code-block:: bash
+
+    # example conda install to get system dependencies
+    conda install -c conda-forge cfgrib rasterio netcdf4
     pip install grids
 
 Interactive Demo
