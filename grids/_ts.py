@@ -33,6 +33,8 @@ from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
 from ._utils import ALL_ENGINES
+from ._utils import SPATIAL_X_VARS
+from ._utils import SPATIAL_Y_VARS
 
 __all__ = ['TimeSeries', ]
 

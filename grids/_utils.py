@@ -13,7 +13,8 @@ except ImportError:
     pygrib = None
 
 __all__ = ['_assign_engine', '_array_by_engine', '_guess_time_var', '_attr_by_engine', '_check_var_in_dataset',
-           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES']
+           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES', 'SPATIAL_X_VARS',
+           'SPATIAL_Y_VARS']
 
 ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
