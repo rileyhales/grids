@@ -1,4 +1,5 @@
 import datetime
+import re
 
 import h5py
 import netCDF4 as nc
@@ -11,10 +12,49 @@ try:
 except ImportError:
     pygrib = None
 
-__all__ = ['_array_by_engine', '_attr_by_engine', '_check_var_in_dataset', '_array_to_stat_list', '_delta_to_datetime',
-           '_gen_stat_list']
+__all__ = ['_assign_engine', '_array_by_engine', '_guess_time_var', '_attr_by_engine', '_check_var_in_dataset',
+           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES']
 
+ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
 ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
+
+T_VARS = ('time', )
+SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
+SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
+
+NETCDF_EXTENSIONS = ('.nc', '.nc4')
+GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
+HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
+GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
+
+
+def _assign_engine(sample_file):
+    if sample_file.startswith('http') and 'nasa.gov' in sample_file:  # nasa opendap server requires auth
+        return 'auth-opendap'
+    elif sample_file.startswith('http'):  # reading from opendap
+        return 'opendap'
+    elif any(sample_file.endswith(i) for i in NETCDF_EXTENSIONS):
+        return 'netcdf4'
+    elif any(sample_file.endswith(i) for i in GRIB_EXTENSIONS):
+        return 'cfgrib'
+    elif any(sample_file.endswith(i) for i in HDF_EXTENSIONS):
+        return 'h5py'
+    elif any(sample_file.endswith(i) for i in GEOTIFF_EXTENSIONS):
+        return 'rasterio'
+    else:
+        raise ValueError(f'Could not guess appropriate file reading ending, please specify it')
+
+
+def _guess_time_var(dims):
+    # do any of the recognized time variables show up in the dim_order
+    for var in T_VARS:
+        if var in dims:
+            return var
+    # do any of the dims match the time pattern
+    for dim in dims:
+        if re.match('time*', dim):
+            return dim
+    return 'time'
 
 
 def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:

@@ -24,23 +24,17 @@ try:
 except ImportError:
     pygrib = None
 
+from ._utils import _assign_engine
+from ._utils import _guess_time_var
 from ._utils import _array_by_engine
 from ._utils import _array_to_stat_list
 from ._utils import _attr_by_engine
 from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_datetime
 from ._utils import _gen_stat_list
+from ._utils import ALL_ENGINES
 
 __all__ = ['TimeSeries', ]
-
-ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
-SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
-ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
-NETCDF_EXTENSIONS = ('.nc', '.nc4')
-GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
-HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
-GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
 
 
 class TimeSeries:
@@ -116,30 +110,13 @@ class TimeSeries:
         self.dim_order = dim_order
 
         # optional parameters describing how to access the data
-        self.engine = kwargs.get('engine', False)
-        if not self.engine:
-            f = files[0]
-            if f.startswith('http') and 'nasa.gov' in f:  # reading from a nasa opendap server (requires auth)
-                self.engine = 'auth-opendap'
-            elif f.startswith('http'):  # reading from opendap
-                self.engine = 'opendap'
-            elif any(f.endswith(i) for i in NETCDF_EXTENSIONS):
-                self.engine = 'netcdf4'
-            elif any(f.endswith(i) for i in GRIB_EXTENSIONS):
-                self.engine = 'cfgrib'
-            elif any(f.endswith(i) for i in HDF_EXTENSIONS):
-                self.engine = 'h5py'
-            elif any(f.endswith(i) for i in GEOTIFF_EXTENSIONS):
-                self.engine = 'rasterio'
-            else:
-                raise ValueError(f'Could not guess appropriate file reading ending, please specify it')
-        else:
-            assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
+        self.engine = kwargs.get('engine', _assign_engine(files[0]))
+        assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
         self.xr_kwargs = kwargs.get('xr_kwargs', None)
         self.fill_value = kwargs.get('fill_value', -9999.0)
 
         # optional parameters modifying how the time data is interpreted
-        self.t_var = kwargs.get('t_var', 'time')
+        self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
         self.unit_str = kwargs.get('unit_str', None)
