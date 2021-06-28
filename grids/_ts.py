@@ -9,7 +9,7 @@ import os
 import warnings
 
 import affine
-import geopandas
+import geopandas as gpd
 import h5py
 import netCDF4 as nc
 import numpy as np
@@ -185,26 +185,28 @@ class TimeSeries:
                 string += f'\n\t{p}: {self.__getattribute__(p)}'
         return string
 
+    def __repr__(self):
+        return self.__str__()
+
     def point(self,
-              *coordinates: int or float or None, ) -> pd.DataFrame:
+              *coords: int or float or None, ) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
 
         Args:
-            coordinates (int or float or None): provide a coordinate value (integer or float) for each dimension of the
+            coords (int or float or None): provide a coordinate value (integer or float) for each dimension of the
                 array which you are creating a time series for. You need to provide exactly the same number of
                 coordinates as there are dimensions
         Returns:
             pandas.DataFrame with an index, a column named datetime, and a column named values.
         """
-        assert len(self.dim_order) == len(coordinates), 'Specify 1 coordinate for each dimension of the array'
+        assert len(self.dim_order) == len(coords), 'Specify 1 coordinate for each dimension of the array'
 
         # make the return item
         results = dict(datetime=[], values=[])
 
         # map coordinates -> cell indices -> python slice() objects
-        slices = self._map_coords_to_slice(coordinates)
-
+        slices = self._map_coords_to_slice(coords)
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
@@ -223,6 +225,58 @@ class TimeSeries:
                     results['values'].append(v)
             else:
                 raise ValueError('There are too many dimensions after slicing')
+            if self.engine != 'pygrib':
+                opened_file.close()
+
+        # return the data stored in a dataframe
+        return pd.DataFrame(results)
+
+    def multipoint(self,
+                   *coords: list,
+                   labels: list = None, ) -> pd.DataFrame:
+        """
+        Extracts a time series at many points for a given series of coordinate values
+
+        Args:
+            coords (int or float or None): a list of coordinate tuples or a 2-D numpy array. Each coordinate pair in
+                the list should provide a coordinate value (integer or float) for each dimension of the array, e.g.
+                len(coordinate_pair) == len(dim_order). See TimeSeries.point for more explanation.
+            labels (list): an optional list of strings which label each of the coordinates provided. len(labels) should
+                be equal to len(coords)
+        Returns:
+            pandas.DataFrame with an index, a column named datetime, and a column named values.
+        """
+        assert len(self.dim_order) == len(coords[0]), 'Specify 1 coordinate for each dimension of the array'
+        labels = [f'point_{i}' for i in range(len(coords[0]))] if labels is None else labels
+        assert len(labels) == len(coords), 'You must provide a label for each point or use auto numbering'
+
+        # make the return item
+        results = dict(datetime=[])
+        for label in labels:
+            results[label] = []
+
+        # map coordinates -> cell indices -> python slice() objects
+        slices = [self._map_coords_to_slice(coord) for coord in coords]
+
+        # iterate over each file extracting the value and time for each
+        for file in self.files:
+            # open the file
+            opened_file = self._open_data(file)
+            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+
+            for i, slc in enumerate(slices):
+                # extract the appropriate values from the variable
+                vs = _array_by_engine(opened_file, self.var, slc)
+                if vs.ndim == 0:
+                    if vs == self.fill_value:
+                        vs = np.nan
+                    results[labels[i]].append(vs)
+                elif vs.ndim == 1:
+                    vs[vs == self.fill_value] = np.nan
+                    for v in vs:
+                        results[labels[i]].append(v)
+                else:
+                    raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -287,7 +341,7 @@ class TimeSeries:
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
         Args:
-            vector (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by geopandas.
+            vector (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by gpd.
             behavior (str): determines how the vector data is used to mask the arrays. Options are: dissolve, features
                 - dissolve: treats all features as if they were 1 feature and masks the entire set of polygons in 1 grid
                 - features: treats each feature as a separate entity, must specify an attribute shared by each feature
@@ -528,7 +582,7 @@ class TimeSeries:
             y = y[:, 0]
 
         # read the shapefile
-        vector_gdf = geopandas.read_file(vector)
+        vector_gdf = gpd.read_file(vector)
         vector_gdf = vector_gdf.to_crs(epsg=4326)
 
         # set up the variables to creating and storing masks
@@ -536,19 +590,20 @@ class TimeSeries:
         gridshape = (y.shape[0], x.shape[0],)
         affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
 
-        # creates a binary, boolean mask of the shapefile
+        # creates a binary/boolean mask of the shapefile
         # in it's crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
             masks.append(
-                ('featuremask',
+                ('shape',
                  rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
             )
         elif self.behavior == 'features':
+            assert self.labelby in vector_gdf.keys(), 'labelby parameter not found in attributes of the vector data'
             for idx, row in vector_gdf.iterrows():
                 masks.append(
                     (row[self.labelby],
                      rasterio.features.geometry_mask(
-                         geopandas.GeoSeries(row.geometry), gridshape, affinetransform, invert=True),)
+                         gpd.GeoSeries(row.geometry), gridshape, affinetransform, invert=True),)
                 )
         return masks
 
