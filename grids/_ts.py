@@ -48,13 +48,15 @@ class TimeSeries:
     Args:
         files (list): A list (even if len==1) of either absolute file paths to netcdf, grib, hdf5, or geotiff files or
             urls to an OPeNDAP service (but beware the data transfer speed bottleneck)
-        var (str or int): The name of a variable as it is stored in the file (e.g. often 'temp' or 'T' instead of
-            Temperature) or the band number if you are using grib files and you specify the engine as pygrib. If the var
-            is contained in a group, include the group name as a unix style path e.g. 'group_name/var'
+        variables (str or int or list or tuple): The name of the variable(s) to query as they are stored in the file
+            (e.g. often 'temp' or 'T' instead of Temperature) or the band number if you are using grib files *and* you
+            specify the engine as pygrib. If the var is contained in a group, include the group name as a unix style
+            path e.g. 'group_name/var'
         dim_order (tuple): A tuple of the names of the dimensions for `var`, listed in order.
 
     Keyword Args:
-        t_var (str): Name of the time variable if it is used in the files. Default: 'time'
+        t_var (str): Name of the time variable if it is used in the files. grids will try to guess it if you do not
+            specify and default to 'time'
         statistics (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
             Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
             Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
@@ -75,10 +77,10 @@ class TimeSeries:
         strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names.
 
     Methods:
-        point: Extracts a time series of values at a point for a given series of coordinate values
+        point: Extracts a time series of values at a point for a given coordinate pair
+        multipoint: Extracts a time series of values for several points given a series of coordinate values
         bound: Extracts a time series of values with a bounding box for each requested statistic
         shape: Extracts a time series of values on a line or within a polygon for each requested statistic
-        masks: Extracts a time series of values from the array for a given mask array for each requested statistic
         stats: Extracts a time series of values which are requested statistics to summarize the array values
 
     Example:
@@ -98,17 +100,18 @@ class TimeSeries:
         # current GFS 1/4 degree forecast time series for air temperature in Provo Utah
         files = ['https://tds.scigw.unidata.ucar.edu/thredds/dodsC/grib/NCEP/GFS/Global_0p25deg/Best']
         var = 'Temperature_surface'
-        dim_order = ('time1', 'lat', 'lon')
+        dim_order = ('time', 'lat', 'lon')
 
         series = TimeSeries(files=files, var=var, dim_order=dim_order)
         temp_forecast = series.point(None, 40.25, -111.65 + 360)
 
     """
 
-    def __init__(self, files: list, var: str or int, dim_order: tuple, **kwargs):
+    def __init__(self, files: list, var: str or int or list or tuple, dim_order: tuple, **kwargs):
         # parameters configuring how the data is interpreted
-        self.files = files
-        self.var = var
+        self.files = (files, ) if isinstance(files, str) else files
+        self.variables = (var,) if isinstance(var, str) else var
+        assert len(self.variables) >= 1, 'specify at least 1 variable'
         self.dim_order = dim_order
 
         # optional parameters describing how to access the data
@@ -142,7 +145,7 @@ class TimeSeries:
 
         # validate that some parameters are compatible
         if self.engine == 'rasterio':
-            assert isinstance(self.var, int), 'GeoTIFF variables must be integer band numbers'
+            assert isinstance(self.variables, int), 'GeoTIFF variables must be integer band numbers'
             if not self.dim_order == ('y', 'x'):
                 warnings.warn('For GeoTIFFs, the correct dim order is ("y", "x")')
                 self.dim_order = ('y', 'x')
@@ -150,7 +153,7 @@ class TimeSeries:
         elif self.engine == 'pygrib':
             if pygrib is None:
                 raise ModuleNotFoundError('pygrib engine only available if optional pygrib dependency is installed')
-            assert isinstance(self.var, int), 'pygrib engine variables must be integer band numbers'
+            assert isinstance(self.variables, int), 'pygrib engine variables must be integer band numbers'
 
     def __bool__(self):
         return True
@@ -182,7 +185,9 @@ class TimeSeries:
         assert len(self.dim_order) == len(coords), 'Specify 1 coordinate for each dimension of the array'
 
         # make the return item
-        results = dict(datetime=[], values=[])
+        results = dict(datetime=[])
+        for var in self.variables:
+            results[var] = []
 
         # map coordinates -> cell indices -> python slice() objects
         slices = self._map_coords_to_slice(coords)
@@ -191,19 +196,19 @@ class TimeSeries:
             # open the file
             opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
-
-            # extract the appropriate values from the variable
-            vs = _array_by_engine(opened_file, self.var, slices)
-            if vs.ndim == 0:
-                if vs == self.fill_value:
-                    vs = np.nan
-                results['values'].append(vs)
-            elif vs.ndim == 1:
-                vs[vs == self.fill_value] = np.nan
-                for v in vs:
-                    results['values'].append(v)
-            else:
-                raise ValueError('There are too many dimensions after slicing')
+            for var in self.variables:
+                # extract the appropriate values from the variable
+                vs = _array_by_engine(opened_file, var, slices)
+                if vs.ndim == 0:
+                    if vs == self.fill_value:
+                        vs = np.nan
+                    results[var].append(vs)
+                elif vs.ndim == 1:
+                    vs[vs == self.fill_value] = np.nan
+                    for v in vs:
+                        results[var].append(v)
+                else:
+                    raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -217,7 +222,7 @@ class TimeSeries:
         Extracts a time series at many points for a given series of coordinate values
 
         Args:
-            coords (int or float or None): a list of coordinate tuples or a 2-D numpy array. Each coordinate pair in
+            coords (int or float or None): a list of coordinate tuples or a 2D numpy array. Each coordinate pair in
                 the list should provide a coordinate value (integer or float) for each dimension of the array, e.g.
                 len(coordinate_pair) == len(dim_order). See TimeSeries.point for more explanation.
             labels (list): an optional list of strings which label each of the coordinates provided. len(labels) should
@@ -226,36 +231,41 @@ class TimeSeries:
             pandas.DataFrame with an index, a column named datetime, and a column named values.
         """
         assert len(self.dim_order) == len(coords[0]), 'Specify 1 coordinate for each dimension of the array'
-        labels = [f'point_{i}' for i in range(len(coords[0]))] if labels is None else labels
+        if labels is None:
+            labels = [f'point{i}' for i in range(len(coords))]
         assert len(labels) == len(coords), 'You must provide a label for each point or use auto numbering'
+
+        datalabels = []
+        for label in labels:
+            for var in self.variables:
+                datalabels.append(f'({var})_{label}')
 
         # make the return item
         results = dict(datetime=[])
-        for label in labels:
-            results[label] = []
+        for datalabel in datalabels:
+            results[datalabel] = []
 
         # map coordinates -> cell indices -> python slice() objects
         slices = [self._map_coords_to_slice(coord) for coord in coords]
 
         # iterate over each file extracting the value and time for each
         for file in self.files:
-            # open the file
             opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
-
-            for i, slc in enumerate(slices):
-                # extract the appropriate values from the variable
-                vs = _array_by_engine(opened_file, self.var, slc)
-                if vs.ndim == 0:
-                    if vs == self.fill_value:
-                        vs = np.nan
-                    results[labels[i]].append(vs)
-                elif vs.ndim == 1:
-                    vs[vs == self.fill_value] = np.nan
-                    for v in vs:
-                        results[labels[i]].append(v)
-                else:
-                    raise ValueError('There are too many dimensions after slicing')
+            for var in self.variables:
+                for i, slc in enumerate(slices):
+                    # extract the appropriate values from the variable
+                    vs = _array_by_engine(opened_file, var, slc)
+                    if vs.ndim == 0:
+                        if vs == self.fill_value:
+                            vs = np.nan
+                        results[f'({var})_{labels[i]}'].append(vs)
+                    elif vs.ndim == 1:
+                        vs[vs == self.fill_value] = np.nan
+                        for v in vs:
+                            results[f'({var})_{labels[i]}'].append(v)
+                    else:
+                        raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -286,10 +296,10 @@ class TimeSeries:
 
         # make the return item
         results = dict(datetime=[])
-
         # add a list for each stat requested
-        for stat in self.statistics:
-            results[stat] = []
+        for var in self.variables:
+            for stat in self.statistics:
+                results[f'({var})_{stat}'] = []
 
         # map coordinates -> cell indices -> python slice() objects
         slices = self._map_coords_to_slice(min_coordinates, max_coordinates)
@@ -299,12 +309,12 @@ class TimeSeries:
             # open the file
             opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
-
-            # slice the variable's array, returns array with shape corresponding to dimension order and size
-            vs = _array_by_engine(opened_file, self.var, slices)
-            vs[vs == self.fill_value] = np.nan
-            for stat in self.statistics:
-                results[stat] += _array_to_stat_list(vs, stat)
+            for var in self.variables:
+                # slice the variable's array, returns array with shape corresponding to dimension order and size
+                vs = _array_by_engine(opened_file, var, slices)
+                vs[vs == self.fill_value] = np.nan
+                for stat in self.statistics:
+                    results[f'({var})_{stat}'] += _array_to_stat_list(vs, stat)
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -312,7 +322,7 @@ class TimeSeries:
         return pd.DataFrame(results)
 
     def shape(self,
-              vector: str,
+              mask: str or np.ndarray,
               behavior: str = None,
               labelby: str = None,
               statistics: str or tuple = None, ) -> pd.DataFrame:
@@ -320,7 +330,7 @@ class TimeSeries:
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
         Args:
-            vector (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by gpd.
+            mask (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by gpd.
             behavior (str): determines how the vector data is used to mask the arrays. Options are: dissolve, features
                 - dissolve: treats all features as if they were 1 feature and masks the entire set of polygons in 1 grid
                 - features: treats each feature as a separate entity, must specify an attribute shared by each feature
@@ -340,10 +350,17 @@ class TimeSeries:
         self.labelby = labelby if labelby is not None else self.labelby
         self.statistics = _gen_stat_list(statistics) if statistics is not None else self.statistics
 
+        if isinstance(mask, str):
+            masks = self._create_spatial_mask_array(mask)
+        elif isinstance(mask, np.ndarray):
+            masks = ['masked', mask]
+
         # make the return item
         results = dict(datetime=[])
-
-        masks = self._create_spatial_mask_array(vector)
+        for mask in masks:
+            for stat in self.statistics:
+                for var in self.variables:
+                    results[f'({var})_{mask[0]}-{stat}'] = []
 
         # iterate over each file extracting the value and time for each
         for file in self.files:
@@ -356,71 +373,17 @@ class TimeSeries:
             slices = [slice(None), ] * len(self.dim_order)
             time_index = self.dim_order.index(self.t_var)
 
-            # slice the variable's array, returns array with shape corresponding to dimension order and size
-            for i in range(num_time_steps):
-                slices[time_index] = slice(i, i + 1)
-                vals = _array_by_engine(opened_file, self.var, tuple(slices))
-                vals = np.flip(vals, axis=0)
-                for mask in masks:
-                    masked_vals = np.where(mask[1], vals, np.nan).squeeze()
-                    masked_vals[masked_vals == self.fill_value] = np.nan
-                    for stat in self.statistics:
-                        if f'{mask[0]}-{stat}' not in results.keys():
-                            results[f'{mask[0]}-{stat}'] = []
-                        results[f'{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
-
-            if self.engine != 'pygrib':
-                opened_file.close()
-
-        # return the data stored in a dataframe
-        return pd.DataFrame(results)
-
-    def masks(self,
-              mask: np.array, ) -> pd.DataFrame:
-        """
-        Subsets the source arrays with any mask matching the dimensions of the source data. Useful when you want to
-        generate your own mask.
-
-        Args:
-            mask (np.array): a numpy array of boolean values, the same shape as the source data files (not including the
-                time dimension, if applicable). True values mark cells that you want to keep.
-        Returns:
-            pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
-        """
-        # make the return item
-        results = dict(datetime=[])
-        # add a list for each stat requested
-        for statistic in self.statistics:
-            results[statistic] = []
-
-        # iterate over each file extracting the value and time for each
-        for file in self.files:
-            # open the file
-            opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
-
-            # slice the variable's array, returns array with shape corresponding to dimension order and size
-            vals = _array_by_engine(opened_file, self.var)
-            vals[vals == self.fill_value] = np.nan
-
-            # if the dimensions are the same
-            if vals.ndim == mask.ndim:
-                vals = np.where(mask, vals, np.nan).squeeze()
-                for statistic in self.statistics:
-                    results[statistic] += _array_to_stat_list(vals, statistic)
-            elif vals.ndim == mask.ndim + 1:
-                if self.t_var in self.dim_order:
-                    # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
-                    for time_step in np.rollaxis(vals, self.dim_order.index(self.t_var)):
-                        time_step = np.flip(time_step, axis=0)
-                        time_step = np.where(mask, time_step, np.nan).squeeze()
-                        for statistic in self.statistics:
-                            results[statistic] += _array_to_stat_list(time_step, statistic)
-                else:
-                    raise RuntimeError(
-                        f'Wrong dimensions. mask dims: {mask.ndim}, data\'s dims {vals.ndim}, file: {file}')
-            else:
-                raise RuntimeError(f'Wrong dimensions. mask dims: {mask.ndim}, data\'s dims {vals.ndim}, file: {file}')
+            for var in self.variables:
+                # slice the variable's array, returns array with shape corresponding to dimension order and size
+                for i in range(num_time_steps):
+                    slices[time_index] = slice(i, i + 1)
+                    vals = _array_by_engine(opened_file, var, tuple(slices))
+                    vals = np.flip(vals, axis=0)
+                    for mask in masks:
+                        masked_vals = np.where(mask[1], vals, np.nan).squeeze()
+                        masked_vals[masked_vals == self.fill_value] = np.nan
+                        for stat in self.statistics:
+                            results[f'({var})_{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
 
             if self.engine != 'pygrib':
                 opened_file.close()
@@ -429,7 +392,7 @@ class TimeSeries:
         return pd.DataFrame(results)
 
     def stats(self,
-              *statistics: str or tuple, ) -> pd.DataFrame:
+              statistics: str or tuple = 'mean') -> pd.DataFrame:
         """
         Computes statistics for the entire array of data contained in each file.
 
@@ -442,31 +405,31 @@ class TimeSeries:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
         # set the specified statistics
-        if statistics:
-            self.statistics = _gen_stat_list(statistics)
+        self.statistics = _gen_stat_list(statistics)
 
         # make the return item
         results = dict(datetime=[])
         # add a list for each stat requested
-        for statistic in statistics:
-            results[statistic] = []
+        for stat in self.statistics:
+            for var in self.variables:
+                results[f'({var})_{stat}'] = []
 
         # iterate over each file extracting the value and time for each
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
             results['datetime'] += list(self._handle_time_steps(opened_file, file))
-
-            # slice the variable's array, returns array with shape corresponding to dimension order and size
-            vals = _array_by_engine(opened_file, self.var)
-            vals[vals == self.fill_value] = np.nan
-            for statistic in self.statistics:
-                if self.t_var in self.dim_order:
-                    # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
-                    for time_step_array in np.rollaxis(vals, self.dim_order.index(self.t_var)):
-                        results[statistic] += _array_to_stat_list(time_step_array, statistic)
-                else:
-                    results[statistic] += _array_to_stat_list(vals, statistic)
+            for var in self.variables:
+                # slice the variable's array, returns array with shape corresponding to dimension order and size
+                vals = _array_by_engine(opened_file, var)
+                vals[vals == self.fill_value] = np.nan
+                for stat in self.statistics:
+                    if self.t_var in self.dim_order:
+                        # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
+                        for time_step_array in np.rollaxis(vals, self.dim_order.index(self.t_var)):
+                            results[f'({var})_{stat}'] += _array_to_stat_list(time_step_array, stat)
+                    else:
+                        results[f'({var})_{stat}'] += _array_to_stat_list(vals, stat)
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -599,7 +562,7 @@ class TimeSeries:
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
 
         elif self.engine == 'pygrib':
-            return [opened_file[self.var].validDate]
+            return [opened_file[self.variables].validDate]
 
         elif _check_var_in_dataset(opened_file, self.t_var):  # use the time variable if it exists
             tvals = _array_by_engine(opened_file, self.t_var)
