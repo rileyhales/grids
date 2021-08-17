@@ -106,21 +106,29 @@ class TimeSeries:
         temp_forecast = series.point(None, 40.25, -111.65 + 360)
 
     """
+    # core parameters from user
     files: list
     var: tuple
     dim_order: tuple
     engine: str
-    xr_kwargs: dict
-    fill_value: int or float or bool
+
+    # how to handle the time data
     t_var: str
     t_index: int
+    t_range: tuple
     interp_units: bool
     strp_filename: str
     unit_str: str
     origin_format: str
+
+    # reducing arrays to numbers
     statistics: str or list or tuple or np.ndarray
     behavior: str
     labelby: str
+    fill_value: int or float or bool
+
+    # help opening data
+    xr_kwargs: dict
     user: str
     pswd: str
     session: requests.session
@@ -141,6 +149,7 @@ class TimeSeries:
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
         self.t_index = self.dim_order.index(self.t_var)
+        self.t_range = kwargs.get('t_range', slice(None))
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
         self.unit_str = kwargs.get('unit_str', None)
@@ -190,7 +199,8 @@ class TimeSeries:
         return self.__str__()
 
     def point(self,
-              *coords: int or float or None, ) -> pd.DataFrame:
+              *coords: int or float or None,
+              time_range: tuple, ) -> pd.DataFrame:
         """
         Extracts a time series at a point for a given series of coordinate values
 
@@ -208,12 +218,15 @@ class TimeSeries:
         for var in self.variables:
             results[var] = []
 
+        # todo use the new function for coords to slices
         # map coordinates -> cell indices -> python slice() objects
         slices = self._map_coords_to_slice(coords)
+
         # iterate over each file extracting the value and time for each
-        for file in self.files:
+        for num, file in enumerate(self.files):
             # open the file
             opened_file = self._open_data(file)
+            # todo use the new function for time steps
             results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             for var in self.variables:
                 # extract the appropriate values from the variable
@@ -227,7 +240,7 @@ class TimeSeries:
                     for v in vs:
                         results[var].append(v)
                 else:
-                    raise ValueError('There are too many dimensions after slicing')
+                    raise ValueError('Too many dimensions remain after slicing')
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -385,17 +398,16 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            new_time_steps = list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
+            new_time_steps = list(self._handle_time_steps(opened_file, file, False))
             num_time_steps = len(new_time_steps)
             results['datetime'] += new_time_steps
 
             slices = [slice(None), ] * len(self.dim_order)
-            time_index = self.t_index
 
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 for i in range(num_time_steps):
-                    slices[time_index] = slice(i, i + 1)
+                    slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_engine(opened_file, var, tuple(slices))
                     vals = np.flip(vals, axis=0)
                     for mask in masks:
@@ -417,9 +429,8 @@ class TimeSeries:
 
         Args:
             statistics (str): Optional: the name of each of the statistics you want to be calculated for the array.
-                Defaults to the value of TimeSeries.statistics and overrides that value is specified here. Options are
-                mean, median, max, min, sum, std (standard deviation) and any percentile number including the % such as
-                '25%' for the 25th percentile.
+                Defaults to the value of TimeSeries.statistics or overrides with value specified. Options are
+                mean, median, max, min, sum, std (standard deviation) and a percentile written as '25%'.
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
@@ -437,7 +448,7 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
+            results['datetime'] += list(self._handle_time_steps(opened_file, file))
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 vals = _array_by_engine(opened_file, var)
@@ -455,66 +466,83 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def _map_coords_to_slice(self, coords_min: tuple, coords_max: tuple = False, ) -> tuple:
-        slices = []
+    # todo generate the slices on the first go
+    # def _gen_dim_slices(self):
+    #     if self.engine == 'pygrib':
+    #         revert_engine = self.engine
+    #         self.engine = 'cfgrib'
+    #     else:
+    #         revert_engine = False
+    #
+    #     slices = []
+    #     tmp_file = self.open_data(self.files[0])
+    #     for dim in self.dim_order:
+    #         if dim == self.t_var:
+    #             slices.append(None)
+    #             continue
+    #         slices.append(self._map_coords_to_slice(coord_min, coord_max, dim, tmp_file))
+    #     if revert_engine:
+    #         self.engine = revert_engine
+    #     return slices
 
-        if self.engine == 'pygrib':
-            revert_engine = self.engine
-            self.engine = 'cfgrib'
-        else:
-            revert_engine = False
+    def _map_coords_to_slice(self, coord_min: int, coord_max: int, var: str, tmp_file) -> int or slice:
+        vals = _array_by_engine(tmp_file, var)
 
-        tmp_file = self._open_data(self.files[0])
-
-        for order, coord_var in enumerate(self.dim_order):
-            val1 = coords_min[order]
-            if val1 is None:
-                slices.append(slice(None))
-                continue
-
-            vals = _array_by_engine(tmp_file, coord_var)
-
-            # reduce the number of dimensions on the coordinate variable if applicable
-            if vals.ndim < 2:
-                pass
-            if vals.ndim == 2:
-                if vals[0, 0] == vals[0, 1]:
-                    vals = vals[:, 0]
-                elif vals[0, 0] == vals[1, 0]:
-                    vals = vals[0, :]
-                else:
-                    raise RuntimeError("A 2D coordinate variable had non-uniform values and couldn't be reduced")
-            elif vals.ndim > 2:
-                raise RuntimeError(f"Invalid data. Coordinate variables should be 1 dimensional")
-
-            min_val = vals.min()
-            max_val = vals.max()
-
-            index1 = self._compare_coords_to_values(vals, min_val, val1, max_val, coord_var)
-
-            if not coords_max:
-                slices.append(index1)
-                continue
-
-            val2 = coords_max[order]
-            index2 = self._compare_coords_to_values(vals, min_val, val2, max_val, coord_var)
-
-            # check each option in case the index is the same or in case the coords were provided backwards
-            if index1 == index2:
-                slices.append(index1)
-            elif index1 < index2:
-                slices.append(slice(index1, index2))
+        # reduce the number of dimensions on the coordinate variable if applicable
+        if vals.ndim < 2:
+            pass
+        if vals.ndim == 2:
+            if vals[0, 0] == vals[0, 1]:
+                vals = vals[:, 0]
+            elif vals[0, 0] == vals[1, 0]:
+                vals = vals[0, :]
             else:
-                slices.append(slice(index2, index1))
+                raise RuntimeError("A 2D coordinate variable had non-uniform values and couldn't be reduced")
+        elif vals.ndim > 2:
+            raise RuntimeError(f"Coordinate variable should be 1-dimensional, was {vals.ndim}-dimensional")
 
-        tmp_file.close()
+        min_val = vals.min()
+        max_val = vals.max()
+        index1 = self._map_coord_to_index(vals, min_val, coord_min, max_val, var)
+        index2 = self._map_coord_to_index(vals, min_val, coord_max, max_val, var)
+        return self._map_index_to_slice(index1, index2)
 
-        if revert_engine:
-            self.engine = revert_engine
+    @staticmethod
+    def _map_coord_to_index(vals: np.ndarray, min_val: float, val: float, max_val: float, var: str) -> int or None:
+        if val is None:
+            return None
+        if max_val >= val >= min_val:
+            index = (np.abs(vals - val)).argmin()
+        else:
+            warnings.warn(f'Value ({val}) is outside min/max range ({min_val}, {max_val}) for dimension ({var})')
+            if val >= max_val:
+                warnings.warn(f'Defaulting to largest value: {max_val}')
+                index = (np.abs(vals - max_val)).argmin()
+            else:
+                warnings.warn(f'Defaulting to smallest value: {min_val}')
+                index = (np.abs(vals - min_val)).argmin()
+        return index
 
-        return tuple(slices)
+    @staticmethod
+    def _map_index_to_slice(index1: int, index2: int) -> int or slice:
+        # if either or both are None
+        if index1 is None and index2 is None:
+            return slice(None)
+        elif index1 is None:
+            return slice(index2)
+        elif index2 is None:
+            return slice(index1, -1)
+
+        # if both are integers
+        elif index1 == index2:
+            return index1
+        elif index1 < index2:
+            return slice(index1, index2)
+        else:
+            return slice(index2, index1)
 
     def _create_spatial_mask_array(self, vector: str, ) -> np.ma:
+        # todo check here if the array needs to be flipped by looking if coord values increase or decrease
         x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
@@ -546,7 +574,7 @@ class TimeSeries:
         affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
 
         # creates a binary/boolean mask of the shapefile
-        # in it's crs, over the affine transform area, for a certain masking behavior
+        # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
             masks.append(
                 ('shape',
@@ -562,7 +590,7 @@ class TimeSeries:
                 )
         return masks
 
-    def _handle_time_steps(self, opened_file, file_path: str, time_slices: slice = False):
+    def _handle_time_steps(self, opened_file, file_path: str):
         if _check_var_in_dataset(opened_file, self.t_var):
             tvals = _array_by_engine(opened_file, self.t_var)
             if isinstance(tvals, np.datetime64):
@@ -580,10 +608,18 @@ class TimeSeries:
                 else:
                     tvals = _delta_to_datetime(tvals, self.unit_str, self.origin_format)
 
-            if time_slices:
-                tvals = tvals[time_slices]
+            # todo make the time slices and values together
+            t_min = tvals.min()
+            t_max = tvals.max()
+            if self.t_range:
+                time_slices = (
+                    self._map_coord_to_index(tvals, t_min, self.t_range[0], t_max, 'time'),
+                    self._map_coord_to_index(tvals, t_min, self.t_range[1], t_max, 'time')
+                )
+            else:
+                time_slices = slice(None)
 
-            return tvals
+            return tvals, time_slices
 
         elif self.strp_filename:  # strip the datetime from the file name
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
@@ -621,19 +657,3 @@ class TimeSeries:
             return xr.open_rasterio(path)
         else:
             raise ValueError(f'Unable to open file, unsupported engine: {self.engine}')
-
-    @staticmethod
-    def _compare_coords_to_values(vals: np.ndarray, min_val: float, val: float, max_val: float,
-                                  coord_var: str) -> int:
-        if max_val >= val >= min_val:
-            index = (np.abs(vals - val)).argmin()
-        else:
-            warnings.warn(f'Coordinate value ({val}) is outside the min/max range ({min_val}, '
-                          f'{max_val}) for the dimension {coord_var}')
-            if val >= max_val:
-                warnings.warn(f'Defaulting to largest value: {max_val}')
-                index = (np.abs(vals - max_val)).argmin()
-            else:
-                warnings.warn(f'Defaulting to smallest value: {min_val}')
-                index = (np.abs(vals - min_val)).argmin()
-        return index
