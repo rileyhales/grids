@@ -1,5 +1,6 @@
 import datetime
 import re
+import warnings
 
 import h5py
 import netCDF4 as nc
@@ -51,9 +52,11 @@ def _guess_time_var(dims):
     for var in T_VARS:
         if var in dims:
             return var
+    warnings.warn("A variable named 'time' was not found in the provided list of dimensions")
     # do any of the dims match the time pattern
     for dim in dims:
         if re.match('time*', dim):
+            warnings.warn(f"guessing the correct time dimensions is '{dim}'")
             return dim
     return 'time'
 

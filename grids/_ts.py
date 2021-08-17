@@ -106,10 +106,28 @@ class TimeSeries:
         temp_forecast = series.point(None, 40.25, -111.65 + 360)
 
     """
+    files: list
+    var: tuple
+    dim_order: tuple
+    engine: str
+    xr_kwargs: dict
+    fill_value: int or float or bool
+    t_var: str
+    t_index: int
+    interp_units: bool
+    strp_filename: str
+    unit_str: str
+    origin_format: str
+    statistics: str or list or tuple or np.ndarray
+    behavior: str
+    labelby: str
+    user: str
+    pswd: str
+    session: requests.session
 
     def __init__(self, files: list, var: str or int or list or tuple, dim_order: tuple, **kwargs):
         # parameters configuring how the data is interpreted
-        self.files = (files, ) if isinstance(files, str) else files
+        self.files = (files,) if isinstance(files, str) else files
         self.variables = (var,) if isinstance(var, str) else var
         assert len(self.variables) >= 1, 'specify at least 1 variable'
         self.dim_order = dim_order
@@ -122,6 +140,7 @@ class TimeSeries:
 
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
+        self.t_index = self.dim_order.index(self.t_var)
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
         self.unit_str = kwargs.get('unit_str', None)
@@ -195,7 +214,7 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             for var in self.variables:
                 # extract the appropriate values from the variable
                 vs = _array_by_engine(opened_file, var, slices)
@@ -251,7 +270,7 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             for var in self.variables:
                 for i, slc in enumerate(slices):
                     # extract the appropriate values from the variable
@@ -308,7 +327,7 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 vs = _array_by_engine(opened_file, var, slices)
@@ -366,12 +385,12 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            new_time_steps = list(self._handle_time_steps(opened_file, file))
+            new_time_steps = list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             num_time_steps = len(new_time_steps)
             results['datetime'] += new_time_steps
 
             slices = [slice(None), ] * len(self.dim_order)
-            time_index = self.dim_order.index(self.t_var)
+            time_index = self.t_index
 
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
@@ -418,7 +437,7 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time_steps(opened_file, file))
+            results['datetime'] += list(self._handle_time_steps(opened_file, file, slices[self.t_index]))
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 vals = _array_by_engine(opened_file, var)
@@ -426,7 +445,7 @@ class TimeSeries:
                 for stat in self.statistics:
                     if self.t_var in self.dim_order:
                         # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
-                        for time_step_array in np.rollaxis(vals, self.dim_order.index(self.t_var)):
+                        for time_step_array in np.rollaxis(vals, self.t_index):
                             results[f'({var})_{stat}'] += _array_to_stat_list(time_step_array, stat)
                     else:
                         results[f'({var})_{stat}'] += _array_to_stat_list(vals, stat)
@@ -471,20 +490,14 @@ class TimeSeries:
             min_val = vals.min()
             max_val = vals.max()
 
-            if not max_val >= val1 >= min_val:
-                raise ValueError(f'Coordinate value ({val1}) is outside the min/max range ({min_val}, '
-                                 f'{max_val}) for the dimension {coord_var}')
-            index1 = (np.abs(vals - val1)).argmin()
+            index1 = self._compare_coords_to_values(vals, min_val, val1, max_val, coord_var)
 
             if not coords_max:
                 slices.append(index1)
                 continue
 
             val2 = coords_max[order]
-            if not max_val >= val2 >= min_val:
-                raise ValueError(f'Coordinate value ({val2}) is outside the min/max range ({min_val}, '
-                                 f'{max_val}) for the dimension {coord_var}')
-            index2 = (np.abs(vals - val2)).argmin()
+            index2 = self._compare_coords_to_values(vals, min_val, val2, max_val, coord_var)
 
             # check each option in case the index is the same or in case the coords were provided backwards
             if index1 == index2:
@@ -549,14 +562,28 @@ class TimeSeries:
                 )
         return masks
 
-    def _handle_time_steps(self, opened_file, file_path):
-        if self.interp_units:  # convert the time variable array's numbers to datetime representations
+    def _handle_time_steps(self, opened_file, file_path: str, time_slices: slice = False):
+        if _check_var_in_dataset(opened_file, self.t_var):
             tvals = _array_by_engine(opened_file, self.t_var)
-            if self.engine == 'xarray':
-                return tvals
-            if self.unit_str is None:
-                return _delta_to_datetime(tvals, _attr_by_engine(opened_file, self.t_var, 'units'), self.origin_format)
-            return _delta_to_datetime(tvals, self.unit_str, self.origin_format)
+            if isinstance(tvals, np.datetime64):
+                tvals = [tvals]
+            if tvals.ndim == 0:
+                ...
+            else:
+                tvals = [t for t in tvals]
+
+            if self.interp_units:  # convert the time variable array's numbers to datetime representations
+                if self.engine == 'xarray':
+                    ...
+                elif self.unit_str is None:
+                    tvals = _delta_to_datetime(tvals, _attr_by_engine(opened_file, self.t_var, 'units'), self.origin_format)
+                else:
+                    tvals = _delta_to_datetime(tvals, self.unit_str, self.origin_format)
+
+            if time_slices:
+                tvals = tvals[time_slices]
+
+            return tvals
 
         elif self.strp_filename:  # strip the datetime from the file name
             return [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
@@ -564,17 +591,6 @@ class TimeSeries:
         elif self.engine == 'pygrib':
             return [opened_file[self.variables].validDate]
 
-        elif _check_var_in_dataset(opened_file, self.t_var):  # use the time variable if it exists
-            tvals = _array_by_engine(opened_file, self.t_var)
-            if isinstance(tvals, np.datetime64):
-                return [tvals]
-            if tvals.ndim == 0:
-                return tvals
-            else:
-                dates = []
-                for t in tvals:
-                    dates.append(t)
-                return dates
         else:
             return [os.path.basename(file_path), ]
 
@@ -605,3 +621,19 @@ class TimeSeries:
             return xr.open_rasterio(path)
         else:
             raise ValueError(f'Unable to open file, unsupported engine: {self.engine}')
+
+    @staticmethod
+    def _compare_coords_to_values(vals: np.ndarray, min_val: float, val: float, max_val: float,
+                                  coord_var: str) -> int:
+        if max_val >= val >= min_val:
+            index = (np.abs(vals - val)).argmin()
+        else:
+            warnings.warn(f'Coordinate value ({val}) is outside the min/max range ({min_val}, '
+                          f'{max_val}) for the dimension {coord_var}')
+            if val >= max_val:
+                warnings.warn(f'Defaulting to largest value: {max_val}')
+                index = (np.abs(vals - max_val)).argmin()
+            else:
+                warnings.warn(f'Defaulting to smallest value: {min_val}')
+                index = (np.abs(vals - min_val)).argmin()
+        return index
