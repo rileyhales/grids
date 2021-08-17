@@ -1,0 +1,19 @@
+name: grids-dev
+channels:
+  - conda-forge
+dependencies:
+  - python>=3
+  - affine
+  - cfgrib
+  - eccodes
+  - geopandas
+  - h5py
+  - lxml
+  - netcdf4
+  - numpy
+  - pandas
+  - pydap
+  - python-dateutil
+  - rasterio
+  - requests
+  - xarray
