@@ -8,26 +8,20 @@ import numpy as np
 import xarray as xr
 from dateutil.relativedelta import relativedelta
 
+from ._consts import NETCDF_EXTENSIONS
+from ._consts import GRIB_EXTENSIONS
+from ._consts import HDF_EXTENSIONS
+from ._consts import GEOTIFF_EXTENSIONS
+from ._consts import T_VARS
+from ._consts import ALL_STATS
+
 try:
     import pygrib
 except ImportError:
     pygrib = None
 
 __all__ = ['_assign_eng', '_array_by_eng', '_guess_time_var', '_attr_by_eng', '_check_var_in_dataset',
-           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES', 'SPATIAL_X_VARS',
-           'SPATIAL_Y_VARS']
-
-ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
-ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-
-T_VARS = ('time', )
-SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
-SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
-
-NETCDF_EXTENSIONS = ('.nc', '.nc4')
-GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
-HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
-GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
+           '_array_to_stat_list', '_delta_to_time', '_gen_stat_list']
 
 
 def _assign_eng(sample_file):
@@ -133,7 +127,7 @@ def _array_to_stat_list(array: np.array, statistic: str) -> list:
     return list_of_stats
 
 
-def _delta_to_datetime(tvals: np.array, ustr: str, origin_format: str = '%Y-%m-%d %X') -> np.array:
+def _delta_to_time(tvals: np.array, ustr: str, origin_format: str = '%Y-%m-%d %X') -> np.array:
     interval = ustr.split(' ')[0].lower()
     origin = datetime.datetime.strptime(ustr.split(' since ')[-1], origin_format)
     if interval == 'years':

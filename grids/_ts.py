@@ -25,8 +25,6 @@ except ImportError:
     pygrib = None
 
 from ._coords import _map_coords_to_slice
-from ._coords import _map_coord_to_index
-from ._coords import _map_indices_to_slice
 
 from ._utils import _assign_eng
 from ._utils import _guess_time_var
@@ -34,11 +32,12 @@ from ._utils import _array_by_eng
 from ._utils import _array_to_stat_list
 from ._utils import _attr_by_eng
 from ._utils import _check_var_in_dataset
-from ._utils import _delta_to_datetime
+from ._utils import _delta_to_time
 from ._utils import _gen_stat_list
-from ._utils import ALL_ENGINES
-from ._utils import SPATIAL_X_VARS
-from ._utils import SPATIAL_Y_VARS
+
+from ._consts import ALL_ENGINES
+from ._consts import SPATIAL_X_VARS
+from ._consts import SPATIAL_Y_VARS
 
 __all__ = ['TimeSeries', ]
 
@@ -86,7 +85,6 @@ class TimeSeries:
         bound: Extracts a time series of values with a bounding box for each requested statistic
         range: Alias for TimeSeries.bound()
         shape: Extracts a time series of values on a line or within a polygon for each requested statistic
-        stats: Extracts a time series of values which are requested statistics to summarize the array values
 
     Example:
         import grids
@@ -406,6 +404,8 @@ class TimeSeries:
             masks = self._create_spatial_mask_array(mask)
         elif isinstance(mask, np.ndarray):
             masks = ['masked', mask]
+        else:
+            raise ValueError('Unusable data provided for the "mask" argument')
 
         # make the return item
         results = dict(datetime=[])
@@ -444,50 +444,6 @@ class TimeSeries:
         # return the data stored in a dataframe
         return pd.DataFrame(results)
 
-    def stats(self,
-              statistics: str or tuple = 'mean') -> pd.DataFrame:
-        """
-        Computes statistics for the entire array of data contained in each file.
-
-        Args:
-            statistics (str): Optional: the name of each of the statistics you want to be calculated for the array.
-                Defaults to the value of TimeSeries.statistics or overrides with value specified. Options are
-                mean, median, max, min, sum, std (standard deviation) and a percentile written as '25%'.
-        Returns:
-            pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
-        """
-        # set the specified statistics
-        self.statistics = _gen_stat_list(statistics)
-
-        # make the return item
-        results = dict(datetime=[])
-        # add a list for each stat requested
-        for stat in self.statistics:
-            for var in self.variables:
-                results[f'({var})_{stat}'] = []
-
-        # iterate over each file extracting the value and time for each
-        for file in self.files:
-            # open the file
-            opened_file = self._open_data(file)
-            results['datetime'] += list(self._handle_time(opened_file, file))
-            for var in self.variables:
-                # slice the variable's array, returns array with shape corresponding to dimension order and size
-                vals = _array_by_eng(opened_file, var)
-                vals[vals == self.fill_value] = np.nan
-                for stat in self.statistics:
-                    if self.t_var in self.dim_order:
-                        # roll axis brings the time dimension to the "front" so we iterate over it in a for loop
-                        for time_step_array in np.rollaxis(vals, self.t_index):
-                            results[f'({var})_{stat}'] += _array_to_stat_list(time_step_array, stat)
-                    else:
-                        results[f'({var})_{stat}'] += _array_to_stat_list(vals, stat)
-            if self.engine != 'pygrib':
-                opened_file.close()
-
-        # return the data stored in a dataframe
-        return pd.DataFrame(results)
-
     def _gen_dim_slices(self,
                         coords: tuple,
                         slice_style: str):
@@ -520,7 +476,6 @@ class TimeSeries:
         return slices
 
     def _create_spatial_mask_array(self, vector: str, ) -> np.ma:
-        # todo check here if the array needs to be flipped by looking if coord values increase or decrease
         x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
@@ -578,13 +533,14 @@ class TimeSeries:
             else:
                 tvals = [t for t in tvals]
 
-            if self.interp_units:  # convert the time variable array's numbers to datetime representations
+            # convert the time variable array's numbers to datetime representations
+            if self.interp_units:
                 if self.engine == 'xarray':
                     ...
                 elif self.unit_str is None:
-                    tvals = _delta_to_datetime(tvals, _attr_by_eng(opened_file, self.t_var, 'units'), self.origin_format)
+                    tvals = _delta_to_time(tvals, _attr_by_eng(opened_file, self.t_var, 'units'), self.origin_format)
                 else:
-                    tvals = _delta_to_datetime(tvals, self.unit_str, self.origin_format)
+                    tvals = _delta_to_time(tvals, self.unit_str, self.origin_format)
         elif self.strp_filename:  # strip the datetime from the file name
             tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
         elif self.engine == 'pygrib':
@@ -605,8 +561,11 @@ class TimeSeries:
                     return xr.open_dataset(xr.backends.PydapDataStore.open(path, session=self.session))
                 else:
                     return xr.open_dataset(path)
+            except ConnectionRefusedError as e:
+                raise e
             except Exception as e:
-                raise ConnectionRefusedError(f'Couldn\'t connect to dataset {path}. Does it exist? Need credentials?')
+                print('Unexpected Error')
+                raise e
         elif self.engine == 'auth-opendap':
             return xr.open_dataset(xr.backends.PydapDataStore.open(
                 path, session=setup_session(self.user, self.pswd, check_url=path)))
