@@ -13,7 +13,7 @@ try:
 except ImportError:
     pygrib = None
 
-__all__ = ['_assign_engine', '_array_by_engine', '_guess_time_var', '_attr_by_engine', '_check_var_in_dataset',
+__all__ = ['_assign_eng', '_array_by_eng', '_guess_time_var', '_attr_by_eng', '_check_var_in_dataset',
            '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES', 'SPATIAL_X_VARS',
            'SPATIAL_Y_VARS']
 
@@ -30,7 +30,7 @@ HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
 GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
 
 
-def _assign_engine(sample_file):
+def _assign_eng(sample_file):
     if sample_file.startswith('http') and 'nasa.gov' in sample_file:  # nasa opendap server requires auth
         return 'auth-opendap'
     elif sample_file.startswith('http'):  # reading from opendap
@@ -55,13 +55,14 @@ def _guess_time_var(dims):
     warnings.warn("A variable named 'time' was not found in the provided list of dimensions")
     # do any of the dims match the time pattern
     for dim in dims:
-        if re.match('time*', dim):
-            warnings.warn(f"guessing the correct time dimensions is '{dim}'")
-            return dim
+        if not re.match('time*', dim):
+            continue
+        warnings.warn(f"guessing the correct time dimensions is '{dim}'")
+        return dim
     return 'time'
 
 
-def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
+def _array_by_eng(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
     if isinstance(open_file, xr.Dataset):  # xarray, cfgrib
         return open_file[var][slices].data
     elif isinstance(open_file, xr.DataArray):  # rasterio
@@ -78,7 +79,7 @@ def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) ->
         raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
 
 
-def _attr_by_engine(open_file, var: str, attribute: str) -> str:
+def _attr_by_eng(open_file, var: str, attribute: str) -> str:
     if isinstance(open_file, xr.Dataset) or isinstance(open_file, xr.DataArray):  # xarray, cfgrib, rasterio
         return open_file[var].attrs[attribute]
     elif isinstance(open_file, nc.Dataset):  # netcdf4
@@ -125,8 +126,8 @@ def _array_to_stat_list(array: np.array, statistic: str) -> list:
         else:
             raise ValueError(f'Unrecognized statistic, {statistic}. Use stat_type= mean, min or max')
     elif array.ndim == 3:
-        for v in array:
-            list_of_stats += _array_to_stat_list(v, statistic)
+        for a in array:
+            list_of_stats += _array_to_stat_list(a, statistic)
     else:
         raise ValueError('Too many dimensions in the array. You probably did not mean to do stats like this')
     return list_of_stats
