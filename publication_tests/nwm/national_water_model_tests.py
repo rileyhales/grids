@@ -2,16 +2,16 @@
 Copyright Riley Chad Hales 2021
 All Rights Reserved
 """
-import datetime
-import os
-import shutil
+# import datetime
+# import os
+# import shutil
 
 import pandas as pd
-import requests
-import glob
-import grids
+# import requests
+# import glob
+# import grids
 
-import plotly.express as px
+import plotly.graph_objs as go
 
 
 def calc_most_recent_forecast_datetime(fcrange: str, previous: bool = False, steps_back: int = 1):
@@ -57,7 +57,7 @@ def get_forecast_data(fcrange: str,
         ens_prefix = '_'
     else:  # elif fcrange == 'long':
         # ens_members = (1, 2, 3, 4)
-        ens_members = (4, )
+        ens_members = (4,)
         timesteps = [f'{(i + 1) * 6:03}' for i in range(120)]
         dir = f'{fcrange}_range_mem'
         ens_prefix = '_'
@@ -100,7 +100,8 @@ def get_forecast_data(fcrange: str,
 
 
 # set path to download the nwm data
-path_to_nwm_directory = "/Users/rchales/nwm_data"
+# path_to_nwm_directory = "/Users/rchales/nwm_data"
+
 # if os.path.exists(path_to_nwm_directory):
 #     shutil.rmtree(path_to_nwm_directory)
 # os.mkdir(path_to_nwm_directory)
@@ -126,9 +127,27 @@ path_to_nwm_directory = "/Users/rchales/nwm_data"
 master_df = pd.read_csv('national_water_model_extracted_timeseries.csv', index_col=0)
 master_df.index = pd.to_datetime(master_df.index)
 
-plot = px.line(master_df,
-               title='National Water Model Time Series Using Grids')
-plot.update_xaxes(title='Date / Time (UTC)')
-plot.update_yaxes(title='ft^3/sec',)
-plot.write_image('national_water_model_extracted_timeseries.svg')
+plot_lines = []
+for i in (1, 2, 3, 4):
+    plot_lines.append(
+        go.Scatter(
+            x=master_df.index,
+            y=master_df[f'member_{i}'],
+            line=dict(color='blue', width=5),
+            showlegend=False
+        )
+    )
+for i in (1, 2, 3, 4):
+    plot_lines.append(
+        go.Scatter(
+            x=master_df.index,
+            y=master_df[f'member_{i}'],
+            line=dict(color='red', dash='dot'),
+            showlegend=False
+        )
+    )
+plot = go.Figure(plot_lines)
+plot.update_xaxes(title='Datetime (UTC)')
+plot.update_yaxes(title='Forecasted Discharge (ft^3/sec)')
+plot.write_image('new_timeseries_plot.png')
 plot.show()

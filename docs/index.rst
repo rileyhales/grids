@@ -2,15 +2,15 @@
     :maxdepth: 3
     :numbered:
 
-*******************************************
-Grids: Temporal Informatics of Gridded Data
-*******************************************
+*********************
+The Grids Python Tool
+*********************
 
 .. image:: https://img.shields.io/pypi/v/grids
     :target: https://pypi.org/project/grids
     :alt: PYPI Version
 .. image:: https://readthedocs.org/projects/tsgrids/badge/?version=latest
-    :target: https://tsgrids.readthedocs.io/en/latest/?badge=latest
+    :target: https://grids.rileyhales.com/en/latest/?badge=latest
     :alt: Documentation Status
 
 Tools for extracting time series subsets from n-dimensional arrays in NetCDF, GRIB, HDF, and GeoTIFF formats. Time series
@@ -20,7 +20,14 @@ can be extracted for:
 #. Ranges or Bounding Boxes - by specifying the minimum and maximum coordinates for each dimension
 #. Spatial data - if the rasters are spatial data and the appropriate dimensions are specified
 #. Masks - any irregularly shaped subset of the array which you can create a binary mask array for
-#. Statistical summaries - of the entire array
+
+Citations
+*********
+
+If you use Grids, please cite
+
+- Our journal article at MDPI Water. doi: `10.3390/w13152066 <https://doi.org/10.3390/w13152066>`_
+- The source code through Zenodo. doi: `10.5281/zenodo.5225437 <https://doi.org/10.5281/zenodo.5225437>`_
 
 Installation
 ************
