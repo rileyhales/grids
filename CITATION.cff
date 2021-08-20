@@ -7,7 +7,7 @@ cff-version: "1.2.0"
 date-released: 2021-08-19
 doi: "10.3390/w13152066"
 identifiers:
-  - description: Academic journal article - MDPI Water
+  - description: MDPI Water academic journal article
     type: doi
     value: "10.3390/w13152066"
   - description: Code snapshots on Zenodo
@@ -18,7 +18,7 @@ keywords:
   - "time series"
   - grids
 license: "BSD-3-Clause-Clear"
-message: "If you use this software, please cite both the journal article and the code using the provided DOI's. Give preference to citing the journal article if you must choose 1.
+message: "Please cite both the journal article and the code with these DOIs. Cite the article if you must choose 1."
 repository-code: "https://github.com/rileyhales/grids"
 title: "The Grids Python Package"
 version: "0.11"
