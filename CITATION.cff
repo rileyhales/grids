@@ -18,12 +18,7 @@ keywords:
   - "time series"
   - grids
 license: "BSD-3-Clause-Clear"
-message: "If you use this software, please cite it using these metadata. This contains both a DOI to an academic journal article
-as well as a snapshot of the code at Zenodo. If you may only cite one, please default to the journal article and include the list
-of authors of that journal article."
-preferred-citation:
-  - collection-doi: "10.3390/w13152066"
-  - type: article
+message: "If you use this software, please cite both the journal article and the code using the provided DOI's. Give preference to citing the journal article if you must choose 1.
 repository-code: "https://github.com/rileyhales/grids"
 title: "The Grids Python Package"
 version: "0.11"
