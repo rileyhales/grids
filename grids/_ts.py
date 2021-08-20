@@ -286,11 +286,11 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             opened_file = self._open_data(file)
-            tsteps, tslices = self._handle_time(opened_file, file, (coords[self.t_index], coords[self.t_index]))
+            tsteps, tslices = self._handle_time(opened_file, file, (coords[0][self.t_index], coords[0][self.t_index]))
             results['datetime'] += list(tsteps)
-            slices[self.t_index] = tslices
             for var in self.variables:
                 for i, slc in enumerate(slices):
+                    slc[self.t_index] = tslices
                     # extract the appropriate values from the variable
                     vs = _array_by_eng(opened_file, var, tuple(slc))
                     if vs.ndim == 0:
@@ -455,21 +455,30 @@ class TimeSeries:
 
         slices = []
         tmp_file = self._open_data(self.files[0])
-        for index, dim in enumerate(self.dim_order):
-            if dim == self.t_var:
-                slices.append(None)
-                continue
-            vals = _array_by_eng(tmp_file, dim)
 
-            if slice_style == 'point':
-                slices.append(_map_coords_to_slice(vals, coords[index], coords[index], dim))
-            elif slice_style == 'multipoint':
+        if slice_style in ('point', 'range'):
+            for index, dim in enumerate(self.dim_order):
+                if dim == self.t_var:
+                    slices.append(None)
+                    continue
+                vals = _array_by_eng(tmp_file, dim)
+                if slice_style == 'point':
+                    slices.append(_map_coords_to_slice(vals, coords[index], coords[index], dim))
+                else:
+                    slices.append(_map_coords_to_slice(vals, coords[0][index], coords[1][index], dim))
+        elif slice_style == 'multipoint':
+            for index, dim in enumerate(self.dim_order):
+                if dim == self.t_var:
+                    slices.append([None, ] * len(coords))
+                    continue
+                vals = _array_by_eng(tmp_file, dim)
+                dim_slices = []
                 for coord in coords:
-                    slices.append(_map_coords_to_slice(vals, coord[index], coord[index], dim))
-            elif slice_style == 'range':
-                slices.append(_map_coords_to_slice(vals, coords[0][index], coords[1][index], dim))
-            else:
-                raise RuntimeError("Slice behavior not implemented")
+                    dim_slices.append(_map_coords_to_slice(vals, coord[index], coord[index], dim))
+                slices.append(dim_slices)
+            slices = np.transpose(slices)
+        else:
+            raise RuntimeError("Slice behavior not implemented")
 
         if revert_engine:
             self.engine = revert_engine
@@ -550,7 +559,7 @@ class TimeSeries:
 
         tvals = np.array(tvals)
         time_slices = _map_coords_to_slice(tvals, time_range[0], time_range[1], 'time')
-        return tvals[(time_slices, )], time_slices
+        return tvals[(time_slices,)], time_slices
 
     def _open_data(self, path):
         if self.engine == 'xarray':
