@@ -151,7 +151,9 @@ class TimeSeries:
 
         # optional parameters modifying how the time data is interpreted
         self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
-        self.t_index = self.dim_order.index(self.t_var)
+        self.t_var_in_dims = self.t_var in self.dim_order
+        self.t_index = self.dim_order.index(self.t_var) if self.t_var_in_dims else False
+
         # self.t_range = kwargs.get('t_range', slice(None))
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
@@ -227,9 +229,9 @@ class TimeSeries:
         for num, file in enumerate(self.files):
             # open the file
             opened_file = self._open_data(file)
-            tsteps, tslices = self._handle_time(opened_file, file, (coords[self.t_index], coords[self.t_index]))
+            tsteps, tslices = self._handle_time(opened_file, file, (coords, coords))
             results['datetime'] += list(tsteps)
-            slices[self.t_index] = tslices
+            slices[self.t_index] = tslices if self.t_var_in_dims else slices[self.t_index]
             for var in self.variables:
                 # extract the appropriate values from the variable
                 vs = _array_by_eng(opened_file, var, tuple(slices))
@@ -286,11 +288,11 @@ class TimeSeries:
         # iterate over each file extracting the value and time for each
         for file in self.files:
             opened_file = self._open_data(file)
-            tsteps, tslices = self._handle_time(opened_file, file, (coords[0][self.t_index], coords[0][self.t_index]))
+            tsteps, tslices = self._handle_time(opened_file, file, (coords[0], coords[0]))
             results['datetime'] += list(tsteps)
             for var in self.variables:
                 for i, slc in enumerate(slices):
-                    slc[self.t_index] = tslices
+                    slc[self.t_index] = tslices if self.t_var_in_dims else slc[self.t_index]
                     # extract the appropriate values from the variable
                     vs = _array_by_eng(opened_file, var, tuple(slc))
                     if vs.ndim == 0:
@@ -345,9 +347,9 @@ class TimeSeries:
         for file in self.files:
             # open the file
             opened_file = self._open_data(file)
-            tsteps, tslices = self._handle_time(opened_file, file, (min_coords[self.t_index], max_coords[self.t_index]))
+            tsteps, tslices = self._handle_time(opened_file, file, (min_coords, max_coords))
             results['datetime'] += list(tsteps)
-            slices[self.t_index] = tslices
+            slices[self.t_index] = tslices if self.t_var_in_dims else slices[self.t_index]
             for var in self.variables:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 vs = _array_by_eng(opened_file, var, tuple(slices))
@@ -423,7 +425,7 @@ class TimeSeries:
             opened_file = self._open_data(file)
             tsteps, tslices = self._handle_time(opened_file, file, (time_range[0], time_range[1]))
             results['datetime'] += list(tsteps)
-            slices[self.t_index] = tslices
+            slices[self.t_index] = tslices if self.t_var_in_dims else slices[self.t_index]
             num_time_steps = len(tsteps)
 
             for var in self.variables:
@@ -558,7 +560,21 @@ class TimeSeries:
             raise RuntimeError('Unable to find the correct time values. Is there a time variable?')
 
         tvals = np.array(tvals)
-        time_slices = _map_coords_to_slice(tvals, time_range[0], time_range[1], 'time')
+
+        # if the variable depends on time then there should be a coordinate provided for it
+        if self.t_var_in_dims:
+            t1 = time_range[0]
+            t2 = time_range[1]
+            if len(t1) != 0:
+                t1 = t1[self.t_index]
+            if len(t2) != 0:
+                t2 = t2[self.t_index]
+        # otherwise, no time coordinates provided.
+        else:
+            t1 = None
+            t2 = None
+
+        time_slices = _map_coords_to_slice(tvals, t1, t2, 'time')
         return tvals[(time_slices,)], time_slices
 
     def _open_data(self, path):
