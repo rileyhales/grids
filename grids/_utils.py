@@ -1,5 +1,6 @@
 import datetime
 import re
+import warnings
 
 import h5py
 import netCDF4 as nc
@@ -7,29 +8,23 @@ import numpy as np
 import xarray as xr
 from dateutil.relativedelta import relativedelta
 
+from ._consts import NETCDF_EXTENSIONS
+from ._consts import GRIB_EXTENSIONS
+from ._consts import HDF_EXTENSIONS
+from ._consts import GEOTIFF_EXTENSIONS
+from ._consts import T_VARS
+from ._consts import ALL_STATS
+
 try:
     import pygrib
 except ImportError:
     pygrib = None
 
-__all__ = ['_assign_engine', '_array_by_engine', '_guess_time_var', '_attr_by_engine', '_check_var_in_dataset',
-           '_array_to_stat_list', '_delta_to_datetime', '_gen_stat_list', 'ALL_ENGINES', 'SPATIAL_X_VARS',
-           'SPATIAL_Y_VARS']
-
-ALL_ENGINES = ('xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio',)
-ALL_STATS = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-
-T_VARS = ('time', )
-SPATIAL_X_VARS = ('x', 'lon', 'longitude', 'longitudes', 'degrees_east', 'eastings',)
-SPATIAL_Y_VARS = ('y', 'lat', 'latitude', 'longitudes', 'degrees_north', 'northings',)
-
-NETCDF_EXTENSIONS = ('.nc', '.nc4')
-GRIB_EXTENSIONS = ('.grb', 'grb2', '.grib', '.grib2')
-HDF_EXTENSIONS = ('.h5', '.hd5', '.hdf5')
-GEOTIFF_EXTENSIONS = ('.gtiff', '.tiff', 'tif')
+__all__ = ['_assign_eng', '_array_by_eng', '_guess_time_var', '_attr_by_eng', '_check_var_in_dataset',
+           '_array_to_stat_list', '_delta_to_time', '_gen_stat_list']
 
 
-def _assign_engine(sample_file):
+def _assign_eng(sample_file):
     if sample_file.startswith('http') and 'nasa.gov' in sample_file:  # nasa opendap server requires auth
         return 'auth-opendap'
     elif sample_file.startswith('http'):  # reading from opendap
@@ -51,14 +46,17 @@ def _guess_time_var(dims):
     for var in T_VARS:
         if var in dims:
             return var
+    warnings.warn("A variable named 'time' was not found in the provided list of dimensions")
     # do any of the dims match the time pattern
     for dim in dims:
-        if re.match('time*', dim):
-            return dim
+        if not re.match('time*', dim):
+            continue
+        warnings.warn(f"guessing the correct time dimensions is '{dim}'")
+        return dim
     return 'time'
 
 
-def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
+def _array_by_eng(open_file, var: str or int, slices: tuple = slice(None)) -> np.array:
     if isinstance(open_file, xr.Dataset):  # xarray, cfgrib
         return open_file[var][slices].data
     elif isinstance(open_file, xr.DataArray):  # rasterio
@@ -75,7 +73,7 @@ def _array_by_engine(open_file, var: str or int, slices: tuple = slice(None)) ->
         raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
 
 
-def _attr_by_engine(open_file, var: str, attribute: str) -> str:
+def _attr_by_eng(open_file, var: str, attribute: str) -> str:
     if isinstance(open_file, xr.Dataset) or isinstance(open_file, xr.DataArray):  # xarray, cfgrib, rasterio
         return open_file[var].attrs[attribute]
     elif isinstance(open_file, nc.Dataset):  # netcdf4
@@ -122,14 +120,14 @@ def _array_to_stat_list(array: np.array, statistic: str) -> list:
         else:
             raise ValueError(f'Unrecognized statistic, {statistic}. Use stat_type= mean, min or max')
     elif array.ndim == 3:
-        for v in array:
-            list_of_stats += _array_to_stat_list(v, statistic)
+        for a in array:
+            list_of_stats += _array_to_stat_list(a, statistic)
     else:
         raise ValueError('Too many dimensions in the array. You probably did not mean to do stats like this')
     return list_of_stats
 
 
-def _delta_to_datetime(tvals: np.array, ustr: str, origin_format: str = '%Y-%m-%d %X') -> np.array:
+def _delta_to_time(tvals: np.array, ustr: str, origin_format: str = '%Y-%m-%d %X') -> np.array:
     interval = ustr.split(' ')[0].lower()
     origin = datetime.datetime.strptime(ustr.split(' since ')[-1], origin_format)
     if interval == 'years':
