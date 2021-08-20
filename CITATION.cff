@@ -1,0 +1,29 @@
+authors:
+  - affiliation: "Brigham Young University"
+    family-names: Hales
+    given-names: "Riley Chad"
+    orcid: "https://orcid.org/0000-0001-8517-5755"
+cff-version: "1.2.0"
+date-released: 2021-08-19
+doi: "10.3390/w13152066"
+identifiers:
+  - description: Academic journal article - MDPI Water
+    type: doi
+    value: "10.3390/w13152066"
+  - description: Code snapshots on Zenodo
+    type: doi
+    value: "10.5281/zenodo.5225437"
+keywords:
+  - multidimensional
+  - "time series"
+  - grids
+license: "BSD-3-Clause-Clear"
+message: "If you use this software, please cite it using these metadata. This contains both a DOI to an academic journal article
+as well as a snapshot of the code at Zenodo. If you may only cite one, please default to the journal article and include the list
+of authors of that journal article."
+preferred-citation:
+  - collection-doi: "10.3390/w13152066"
+  - type: article
+repository-code: "https://github.com/rileyhales/grids"
+title: "The Grids Python Package"
+version: "0.11"
