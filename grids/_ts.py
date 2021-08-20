@@ -565,9 +565,9 @@ class TimeSeries:
         if self.t_var_in_dims:
             t1 = time_range[0]
             t2 = time_range[1]
-            if len(t1) != 0:
+            if t1 is not None and len(t1) != 1:
                 t1 = t1[self.t_index]
-            if len(t2) != 0:
+            if t2 is not None and len(t2) != 1:
                 t2 = t2[self.t_index]
         # otherwise, no time coordinates provided.
         else:
