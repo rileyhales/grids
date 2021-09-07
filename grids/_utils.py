@@ -1,4 +1,5 @@
 import datetime
+import operator
 import re
 import warnings
 
@@ -117,6 +118,8 @@ def _array_to_stat_list(array: np.array, statistic: str) -> list:
             list_of_stats.append(np.nanstd(array))
         elif '%' in statistic:
             list_of_stats.append(np.nanpercentile(array, int(statistic.replace('%', ''))))
+        elif statistic == 'values':
+            list_of_stats.append(array.flatten().tolist())
         else:
             raise ValueError(f'Unrecognized statistic, {statistic}. Use stat_type= mean, min or max')
     elif array.ndim == 3:
@@ -156,13 +159,14 @@ def _delta_to_time(tvals: np.array, ustr: str, origin_format: str = '%Y-%m-%d %X
     return np.array([i.strftime("%Y-%m-%d %X") for i in a])
 
 
-def _gen_stat_list(stats: str or list):
+def _gen_stat_list(stats: str or list or tuple):
     if isinstance(stats, str):
         if stats == 'all':
             return ALL_STATS
         else:
             return stats.lower().replace(' ', '').split(',')
     elif isinstance(stats, tuple) or isinstance(stats, list):
-        if any(stat not in ALL_STATS for stat in stats):
-            raise ValueError(f'Unrecognized statistic requested. Choose from: {ALL_STATS}')
+        for stat in stats:
+            if (stat not in ALL_STATS) and not operator.contains(stat, '%') and not stat == 'values':
+                raise ValueError(f'Unrecognized statistic requested. Choose from: {ALL_STATS}')
         return stats
