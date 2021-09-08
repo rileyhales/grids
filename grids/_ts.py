@@ -60,7 +60,7 @@ class TimeSeries:
     Keyword Args:
         t_var (str): Name of the time variable if it is used in the files. grids will try to guess it if you do not
             specify and default to 'time'
-        statistics (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
+        stats (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
             Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
             Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         engine (str): the python package used to power the file reading. Defaults to best for the type of input data
@@ -125,7 +125,7 @@ class TimeSeries:
     origin_format: str
 
     # reducing arrays to numbers
-    statistics: str or list or tuple or np.ndarray
+    stats: str or list or tuple or np.ndarray
     behavior: str
     labelby: str
     fill_value: int or float or bool
@@ -161,7 +161,7 @@ class TimeSeries:
         self.origin_format = kwargs.get('origin_format', '%Y-%m-%d %X')
 
         # optional parameter modifying which statistics to process
-        self.statistics = _gen_stat_list(kwargs.get('statistics', ('mean',)))
+        self.stats = _gen_stat_list(kwargs.get('stats', ('mean',)))
 
         # option parameters describing behavior for timeseries with vector data (cache to make scripts concise)
         self.behavior = kwargs.get('behavior', 'dissolve')
@@ -275,7 +275,7 @@ class TimeSeries:
         datalabels = []
         for label in labels:
             for var in self.variables:
-                datalabels.append(f'({var})_{label}')
+                datalabels.append(f'{var}_{label}')
 
         # make the return item
         results = dict(datetime=[])
@@ -298,11 +298,11 @@ class TimeSeries:
                     if vs.ndim == 0:
                         if vs == self.fill_value:
                             vs = np.nan
-                        results[f'({var})_{labels[i]}'].append(vs)
+                        results[f'{var}_{labels[i]}'].append(vs)
                     elif vs.ndim == 1:
                         vs[vs == self.fill_value] = np.nan
                         for v in vs:
-                            results[f'({var})_{labels[i]}'].append(v)
+                            results[f'{var}_{labels[i]}'].append(v)
                     else:
                         raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
@@ -314,15 +314,16 @@ class TimeSeries:
     def bound(self,
               min_coords: tuple,
               max_coords: tuple,
-              statistics: str or tuple = None, ) -> pd.DataFrame:
+              stats: str or tuple = None, ) -> pd.DataFrame:
         """
         Args:
             min_coords (tuple): a tuple containing minimum coordinates of a bounding box range- coordinates given
                 in order of the dimensions of the source arrays.
             max_coords (tuple): a tuple containing maximum coordinates of a bounding box range- coordinates given
                 in order of the dimensions of the source arrays.
-            statistics (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
-                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
+            stats (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
+                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%), all, or values.
+                Values returns a flattened list of all values in query range for plotting or computing other stats.
                 Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
@@ -331,14 +332,14 @@ class TimeSeries:
             'Specify 1 min and 1 max coordinate for each dimension'
 
         # handle the optional arguments
-        self.statistics = _gen_stat_list(statistics) if statistics is not None else self.statistics
+        self.stats = _gen_stat_list(stats) if stats is not None else self.stats
 
         # make the return item
         results = dict(datetime=[])
         # add a list for each stat requested
         for var in self.variables:
-            for stat in self.statistics:
-                results[f'({var})_{stat}'] = []
+            for stat in self.stats:
+                results[f'{var}_{stat}'] = []
 
         # map coordinates -> cell indices -> python slice() objects
         slices = self._gen_dim_slices((min_coords, max_coords), 'range')
@@ -354,8 +355,8 @@ class TimeSeries:
                 # slice the variable's array, returns array with shape corresponding to dimension order and size
                 vs = _array_by_eng(opened_file, var, tuple(slices))
                 vs[vs == self.fill_value] = np.nan
-                for stat in self.statistics:
-                    results[f'({var})_{stat}'] += _array_to_stat_list(vs, stat)
+                for stat in self.stats:
+                    results[f'{var}_{stat}'] += _array_to_stat_list(vs, stat)
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -365,18 +366,18 @@ class TimeSeries:
     def range(self,
               min_coordinates: tuple,
               max_coordinates: tuple,
-              statistics: str or tuple = None, ) -> pd.DataFrame:
+              stats: str or tuple = None, ) -> pd.DataFrame:
         """
         Alias for TimeSeries.bound(). Refer to documentation for the bound method.
         """
-        return self.bound(min_coordinates, max_coordinates, statistics)
+        return self.bound(min_coordinates, max_coordinates, stats)
 
     def shape(self,
               mask: str or np.ndarray,
               time_range: tuple = (None, None),
               behavior: str = None,
               labelby: str = None,
-              statistics: str or tuple = None, ) -> pd.DataFrame:
+              stats: str or tuple = None, ) -> pd.DataFrame:
         """
         Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
 
@@ -388,8 +389,9 @@ class TimeSeries:
                 - features: treats each feature as a separate entity, must specify an attribute shared by each feature
                 with unique values for each feature used to label the resulting series
             labelby: The name of the attribute in the vector data features to label the several outputs
-            statistics (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
-                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
+            stats (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
+                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%), all, or values.
+                Values returns a flattened list of all values in query range for plotting or computing other stats.
                 Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
@@ -400,7 +402,7 @@ class TimeSeries:
         # cache the behavior and organization parameters
         self.behavior = behavior if behavior is not None else self.behavior
         self.labelby = labelby if labelby is not None else self.labelby
-        self.statistics = _gen_stat_list(statistics) if statistics is not None else self.statistics
+        self.stats = _gen_stat_list(stats) if stats is not None else self.stats
 
         if isinstance(mask, str):
             masks = self._create_spatial_mask_array(mask)
@@ -412,9 +414,9 @@ class TimeSeries:
         # make the return item
         results = dict(datetime=[])
         for mask in masks:
-            for stat in self.statistics:
+            for stat in self.stats:
                 for var in self.variables:
-                    results[f'({var})_{mask[0]}-{stat}'] = []
+                    results[f'{var}_{mask[0]}_{stat}'] = []
 
         # slice data on all dimensions
         slices = [slice(None), ] * len(self.dim_order)
@@ -437,8 +439,8 @@ class TimeSeries:
                     for mask in masks:
                         masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
-                        for stat in self.statistics:
-                            results[f'({var})_{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
+                        for stat in self.stats:
+                            results[f'{var}_{mask[0]}_{stat}'] += _array_to_stat_list(masked_vals, stat)
 
             if self.engine != 'pygrib':
                 opened_file.close()
