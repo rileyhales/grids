@@ -16,6 +16,9 @@ from ._consts import GEOTIFF_EXTENSIONS
 from ._consts import T_VARS
 from ._consts import ALL_STATS
 
+from ._errors import unknown_stat
+from ._errors import unknown_open_file_object
+
 try:
     import pygrib
 except ImportError:
@@ -71,7 +74,7 @@ def _array_by_eng(open_file, var: str or int, slices: tuple = slice(None)) -> np
     elif isinstance(open_file, h5py.File) or isinstance(open_file, h5py.Dataset):  # h5py
         return open_file[var][slices]  # might need to use [...] for string data
     else:
-        raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
+        raise ValueError(unknown_open_file_object(type(open_file)))
 
 
 def _attr_by_eng(open_file, var: str, attribute: str) -> str:
@@ -84,7 +87,7 @@ def _attr_by_eng(open_file, var: str, attribute: str) -> str:
     elif isinstance(open_file, h5py.File) or isinstance(open_file, h5py.Dataset):  # h5py
         return open_file[var].attrs[attribute].decode('UTF-8')
     else:
-        raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
+        raise ValueError(unknown_open_file_object(type(open_file)))
 
 
 def _check_var_in_dataset(open_file, var) -> bool:
@@ -97,34 +100,34 @@ def _check_var_in_dataset(open_file, var) -> bool:
     elif isinstance(open_file, xr.DataArray):
         return bool(var <= open_file.band.shape[0])
     else:
-        raise ValueError(f'Unrecognized opened file dataset: {type(open_file)}')
+        raise ValueError(unknown_open_file_object(type(open_file)))
 
 
-def _array_to_stat_list(array: np.array, statistic: str) -> list:
+def _array_to_stat_list(array: np.array, stat: str) -> list:
     list_of_stats = []
     # add the results to the lists of values and times
     if array.ndim == 1 or array.ndim == 2:
-        if statistic == 'mean':
+        if stat == 'mean':
             list_of_stats.append(np.nanmean(array))
-        elif statistic == 'median':
+        elif stat == 'median':
             list_of_stats.append(np.nanmedian(array))
-        elif statistic == 'max':
+        elif stat == 'max':
             list_of_stats.append(np.nanmax(array))
-        elif statistic == 'min':
+        elif stat == 'min':
             list_of_stats.append(np.nanmin(array))
-        elif statistic == 'sum':
+        elif stat == 'sum':
             list_of_stats.append(np.nansum(array))
-        elif statistic == 'std':
+        elif stat == 'std':
             list_of_stats.append(np.nanstd(array))
-        elif '%' in statistic:
-            list_of_stats.append(np.nanpercentile(array, int(statistic.replace('%', ''))))
-        elif statistic == 'values':
+        elif '%' in stat:
+            list_of_stats.append(np.nanpercentile(array, int(stat.replace('%', ''))))
+        elif stat == 'values':
             list_of_stats.append(array.flatten().tolist())
         else:
-            raise ValueError(f'Unrecognized statistic, {statistic}. Use stat_type= mean, min or max')
+            raise ValueError(unknown_stat(stat))
     elif array.ndim == 3:
         for a in array:
-            list_of_stats += _array_to_stat_list(a, statistic)
+            list_of_stats += _array_to_stat_list(a, stat)
     else:
         raise ValueError('Too many dimensions in the array. You probably did not mean to do stats like this')
     return list_of_stats
@@ -168,5 +171,5 @@ def _gen_stat_list(stats: str or list or tuple):
     elif isinstance(stats, tuple) or isinstance(stats, list):
         for stat in stats:
             if (stat not in ALL_STATS) and not operator.contains(stat, '%') and not stat == 'values':
-                raise ValueError(f'Unrecognized statistic requested. Choose from: {ALL_STATS}')
+                raise ValueError(unknown_stat(stat))
         return stats
