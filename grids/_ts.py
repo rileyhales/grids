@@ -60,7 +60,7 @@ class TimeSeries:
     Keyword Args:
         t_var (str): Name of the time variable if it is used in the files. grids will try to guess it if you do not
             specify and default to 'time'
-        statistics (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
+        stats (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
             Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
             Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
         engine (str): the python package used to power the file reading. Defaults to best for the type of input data
@@ -275,7 +275,7 @@ class TimeSeries:
         datalabels = []
         for label in labels:
             for var in self.variables:
-                datalabels.append(f'({var})_{label}')
+                datalabels.append(f'{var}_{label}')
 
         # make the return item
         results = dict(datetime=[])
@@ -298,11 +298,11 @@ class TimeSeries:
                     if vs.ndim == 0:
                         if vs == self.fill_value:
                             vs = np.nan
-                        results[f'({var})_{labels[i]}'].append(vs)
+                        results[f'{var}_{labels[i]}'].append(vs)
                     elif vs.ndim == 1:
                         vs[vs == self.fill_value] = np.nan
                         for v in vs:
-                            results[f'({var})_{labels[i]}'].append(v)
+                            results[f'{var}_{labels[i]}'].append(v)
                     else:
                         raise ValueError('There are too many dimensions after slicing')
             if self.engine != 'pygrib':
@@ -339,7 +339,7 @@ class TimeSeries:
         # add a list for each stat requested
         for var in self.variables:
             for stat in self.stats:
-                results[f'({var})_{stat}'] = []
+                results[f'{var}_{stat}'] = []
 
         # map coordinates -> cell indices -> python slice() objects
         slices = self._gen_dim_slices((min_coords, max_coords), 'range')
@@ -356,7 +356,7 @@ class TimeSeries:
                 vs = _array_by_eng(opened_file, var, tuple(slices))
                 vs[vs == self.fill_value] = np.nan
                 for stat in self.stats:
-                    results[f'({var})_{stat}'] += _array_to_stat_list(vs, stat)
+                    results[f'{var}_{stat}'] += _array_to_stat_list(vs, stat)
             if self.engine != 'pygrib':
                 opened_file.close()
 
@@ -416,7 +416,7 @@ class TimeSeries:
         for mask in masks:
             for stat in self.stats:
                 for var in self.variables:
-                    results[f'({var})_{mask[0]}-{stat}'] = []
+                    results[f'{var}_{mask[0]}_{stat}'] = []
 
         # slice data on all dimensions
         slices = [slice(None), ] * len(self.dim_order)
@@ -440,7 +440,7 @@ class TimeSeries:
                         masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
                         for stat in self.stats:
-                            results[f'({var})_{mask[0]}-{stat}'] += _array_to_stat_list(masked_vals, stat)
+                            results[f'{var}_{mask[0]}_{stat}'] += _array_to_stat_list(masked_vals, stat)
 
             if self.engine != 'pygrib':
                 opened_file.close()
