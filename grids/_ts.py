@@ -1,6 +1,6 @@
 """
 Author: Riley Hales
-Copyright: Riley Hales, RCH Engineering, 2020
+Copyright: Riley Hales, RCH Engineering, 2021
 License: BSD Clear 3 Clause License
 All rights reserved
 """
@@ -127,7 +127,7 @@ class TimeSeries:
     # reducing arrays to numbers
     stats: str or list or tuple or np.ndarray
     behavior: str
-    labelby: str
+    label_attr: str
     fill_value: int or float or bool
 
     # help opening data
@@ -165,7 +165,7 @@ class TimeSeries:
 
         # option parameters describing behavior for timeseries with vector data (cache to make scripts concise)
         self.behavior = kwargs.get('behavior', 'dissolve')
-        self.labelby = kwargs.get('labelby', None)
+        self.label_attr = kwargs.get('label_attr', None)
 
         # optional authentication for remote datasets
         self.user = kwargs.get('user', None)
@@ -376,10 +376,11 @@ class TimeSeries:
               mask: str or np.ndarray,
               time_range: tuple = (None, None),
               behavior: str = None,
-              labelby: str = None,
+              label_attr: str = None,
+              feature: str = None,
               stats: str or tuple = None, ) -> pd.DataFrame:
         """
-        Applicable only to source data with 2 spatial dimensions and, optionally, a time dimension.
+        Applicable only to source data with exactly 2 spatial dimensions, x and y, and a time dimension.
 
         Args:
             mask (str): path to any spatial polygon file, e.g. shapefile or geojson, which can be read by gpd.
@@ -388,7 +389,8 @@ class TimeSeries:
                 - dissolve: treats all features as if they were 1 feature and masks the entire set of polygons in 1 grid
                 - features: treats each feature as a separate entity, must specify an attribute shared by each feature
                 with unique values for each feature used to label the resulting series
-            labelby: The name of the attribute in the vector data features to label the several outputs
+            label_attr: The name of the attribute in the vector data features to label the several outputs
+            feature: A value of the label_attr attribute for 1 or more features found in the provided shapefile
             stats (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
                 Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%), all, or values.
                 Values returns a flattened list of all values in query range for plotting or computing other stats.
@@ -401,11 +403,11 @@ class TimeSeries:
 
         # cache the behavior and organization parameters
         self.behavior = behavior if behavior is not None else self.behavior
-        self.labelby = labelby if labelby is not None else self.labelby
+        self.label_attr = label_attr if label_attr is not None else self.label_attr
         self.stats = _gen_stat_list(stats) if stats is not None else self.stats
 
         if isinstance(mask, str):
-            masks = self._create_spatial_mask_array(mask)
+            masks = self._create_spatial_mask_array(mask, feature)
         elif isinstance(mask, np.ndarray):
             masks = ['masked', mask]
         else:
@@ -488,7 +490,7 @@ class TimeSeries:
             self.engine = revert_engine
         return slices
 
-    def _create_spatial_mask_array(self, vector: str, ) -> np.ma:
+    def _create_spatial_mask_array(self, vector: str, feature: str) -> np.ma:
         x, y = None, None
         for a in self.dim_order:
             if a in SPATIAL_X_VARS:
@@ -526,13 +528,26 @@ class TimeSeries:
                 ('shape',
                  rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
             )
+        elif self.behavior == 'feature':
+            assert self.label_attr in vector_gdf.keys(), \
+                'label_attr parameter not found in attributes list of the vector data'
+            assert feature is not None, \
+                'Provide a value for the feature argument to query for certain features'
+            vector_gdf = vector_gdf[vector_gdf[self.label_attr] == feature]
+            assert not vector_gdf.empty, f'No features have value "{feature}" for attribubte "{self.label_attr}"'
+            masks.append(
+                (feature,
+                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+            )
+
         elif self.behavior == 'features':
-            assert self.labelby in vector_gdf.keys(), 'labelby parameter not found in attributes of the vector data'
+            assert self.label_attr in vector_gdf.keys(), \
+                'label_attr parameter not found in attributes list of the vector data'
             for idx, row in vector_gdf.iterrows():
                 masks.append(
-                    (row[self.labelby],
-                     rasterio.features.geometry_mask(
-                         gpd.GeoSeries(row.geometry), gridshape, affinetransform, invert=True),)
+                    (row[self.label_attr],
+                     rasterio.features.geometry_mask(gpd.GeoSeries(row.geometry), gridshape, affinetransform,
+                                                     invert=True),)
                 )
         return masks
 

@@ -166,6 +166,8 @@ def _gen_stat_list(stats: str or list or tuple):
     if isinstance(stats, str):
         if stats == 'all':
             return ALL_STATS
+        if stats in ('box', 'boxplot', 'boxwhisker'):
+            return 'max', '75%', 'median', 'mean', '25%', 'min'
         else:
             return stats.lower().replace(' ', '').split(',')
     elif isinstance(stats, tuple) or isinstance(stats, list):
