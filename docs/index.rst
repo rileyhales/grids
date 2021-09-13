@@ -19,7 +19,6 @@ can be extracted for:
 #. Points - by specifying the coordinates of the point in terms of the dimensions of the array
 #. Ranges or Bounding Boxes - by specifying the minimum and maximum coordinates for each dimension
 #. Spatial data - if the rasters are spatial data and the appropriate dimensions are specified
-#. Masks - any irregularly shaped subset of the array which you can create a binary mask array for
 
 Citations
 *********
@@ -50,48 +49,6 @@ Interactive Demo
 View a live `demo python notebook <https://colab.research.google.com/gist/rileyhales/79761303df16127e0195e11425fc2d9d/grids-gist-demo.ipynb>`_ using Google Colaboratory and GitHub Gists.
 
 Find a copy of the notebook on `GitHub Gists <https://gist.github.com/rileyhales/79761303df16127e0195e11425fc2d9d>`_.
-
-Example Usage
-*************
-
-.. code-block:: python
-
-    import glob
-    import grids
-
-    # example using GLDAS datasets (list of absolute file paths)
-    files = sorted(glob.glob('/path/to/my/spatial/data/GLDAS*.nc4'))
-    # the temperature variable's name (string)
-    var = 'Tair_f_inst'
-    # the order of variables in the (tuple of strings)
-    dim_order = ('time', 'lat', 'lon')
-
-    # create a TimeSeries class with your data points
-    ts = grids.TimeSeries(files, var, dim_order)
-    # set option optional behavior for extracting series (see kwargs)
-    ts.interp_units = True
-
-    # get a time series for a point (args are coordinates of the point in order of the dim_order)
-    # None -> all time values, 10 -> latitude ('lat') = 10, 15 -> longitude ('lon') = 15
-    point_timeseries_dataframe = ts.point(None, 10, 15)
-    print(point_timeseries_dataframe)
-
-    # get a time series for a range of values (args are 2 tuples of coordinates)
-    # None -> all time values, between 10-15 latitude, between 15 and 20 longitude
-    boundingbox_timeseries_dataframe = ts.bound((None, 10, 15), (None, 15, 20))
-    print(boundingbox_timeseries_dataframe)
-
-    # get a time series within a shapefile's boundaries
-    # define raster data's EPSG, vector geometry will be reprojected before masking the rasters (see kwargs)
-    ts.epsg = 4326
-    polygon_timeseries_dataframe = ts.shape('/path/to/my/shapefile.shp')
-    print(polygon_timeseries_dataframe)
-
-    # get a time series of the averages of the entire array
-    # stats defaults to computing mean, set stats to compute using ts.statistics (see kwargs)
-    ts.statistics = ('mean', 'median', 'max', 'min', 'sum', 'std',)
-    summarystats_timeseries_dataframe = ts.stats()
-    print(summarystats_timeseries_dataframe)
 
 Handling Time values
 ********************
