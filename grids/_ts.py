@@ -582,10 +582,11 @@ class TimeSeries:
         if self.t_var_in_dims:
             t1 = time_range[0]
             t2 = time_range[1]
-            if t1 is not None and len(t1) != 1:
+
+            if isinstance(t1, list) or isinstance(t1, tuple):
                 t1 = t1[self.t_index]
-            if t2 is not None and len(t2) != 1:
-                t2 = t2[self.t_index]
+            if isinstance(t2, list) or isinstance(t2, tuple):
+                    t2 = t2[self.t_index]
         # otherwise, no time coordinates provided.
         else:
             t1 = None
