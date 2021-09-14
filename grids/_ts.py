@@ -14,7 +14,7 @@ import h5py
 import netCDF4 as nc
 import numpy as np
 import pandas as pd
-import rasterio.features
+import rasterio.features as riof
 import requests
 import xarray as xr
 from pydap.cas.urs import setup_session
@@ -512,21 +512,26 @@ class TimeSeries:
         if y.ndim == 2:
             y = y[:, 0]
 
+        # check if you need to vertically invert the array mask (if y vals go from small to large)
+        invert = y[-1] > y[0]
+
         # read the shapefile
         vector_gdf = gpd.read_file(vector)
         vector_gdf = vector_gdf.to_crs(epsg=4326)
 
-        # set up the variables to creating and storing masks
+        # set up the variables to create and storing masks
         masks = []
-        gridshape = (y.shape[0], x.shape[0],)
-        affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
+        # what is the shape of the grid to be masked
+        gshape = (y.shape[0], x.shape[0],)
+        # calculate the affine transformation of the grid to be masked
+        aff = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
 
         # creates a binary/boolean mask of the shapefile
         # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
             masks.append(
                 ('shape',
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
         elif self.behavior == 'feature':
             assert self.label_attr in vector_gdf.keys(), \
@@ -537,7 +542,7 @@ class TimeSeries:
             assert not vector_gdf.empty, f'No features have value "{feature}" for attribubte "{self.label_attr}"'
             masks.append(
                 (feature,
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
 
         elif self.behavior == 'features':
@@ -546,8 +551,7 @@ class TimeSeries:
             for idx, row in vector_gdf.iterrows():
                 masks.append(
                     (row[self.label_attr],
-                     rasterio.features.geometry_mask(gpd.GeoSeries(row.geometry), gridshape, affinetransform,
-                                                     invert=True),)
+                     riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert),)
                 )
         return masks
 
