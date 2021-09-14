@@ -437,7 +437,6 @@ class TimeSeries:
                 for i in range(num_time_steps):
                     slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_eng(opened_file, var, tuple(slices))
-                    vals = np.flip(vals, axis=0)
                     for mask in masks:
                         masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
