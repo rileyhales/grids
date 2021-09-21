@@ -14,7 +14,7 @@ import h5py
 import netCDF4 as nc
 import numpy as np
 import pandas as pd
-import rasterio.features
+import rasterio.features as riof
 import requests
 import xarray as xr
 from pydap.cas.urs import setup_session
@@ -144,7 +144,9 @@ class TimeSeries:
         self.dim_order = dim_order
 
         # optional parameters describing how to access the data
-        self.engine = kwargs.get('engine', _assign_eng(files[0]))
+        self.engine = kwargs.get('engine', False)
+        if not self.engine:
+            self.engine = _assign_eng(files[0])
         assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
         self.xr_kwargs = kwargs.get('xr_kwargs', None)
         self.fill_value = kwargs.get('fill_value', -9999.0)
@@ -437,7 +439,6 @@ class TimeSeries:
                 for i in range(num_time_steps):
                     slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_eng(opened_file, var, tuple(slices))
-                    vals = np.flip(vals, axis=0)
                     for mask in masks:
                         masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
@@ -512,21 +513,26 @@ class TimeSeries:
         if y.ndim == 2:
             y = y[:, 0]
 
+        # check if you need to vertically invert the array mask (if y vals go from small to large)
+        invert = y[-1] > y[0]
+
         # read the shapefile
         vector_gdf = gpd.read_file(vector)
         vector_gdf = vector_gdf.to_crs(epsg=4326)
 
-        # set up the variables to creating and storing masks
+        # set up the variables to create and storing masks
         masks = []
-        gridshape = (y.shape[0], x.shape[0],)
-        affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
+        # what is the shape of the grid to be masked
+        gshape = (y.shape[0], x.shape[0],)
+        # calculate the affine transformation of the grid to be masked
+        aff = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
 
         # creates a binary/boolean mask of the shapefile
         # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
             masks.append(
                 ('shape',
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
         elif self.behavior == 'feature':
             assert self.label_attr in vector_gdf.keys(), \
@@ -537,7 +543,7 @@ class TimeSeries:
             assert not vector_gdf.empty, f'No features have value "{feature}" for attribubte "{self.label_attr}"'
             masks.append(
                 (feature,
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
+                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
 
         elif self.behavior == 'features':
@@ -546,13 +552,18 @@ class TimeSeries:
             for idx, row in vector_gdf.iterrows():
                 masks.append(
                     (row[self.label_attr],
-                     rasterio.features.geometry_mask(gpd.GeoSeries(row.geometry), gridshape, affinetransform,
-                                                     invert=True),)
+                     riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert),)
                 )
         return masks
 
     def _handle_time(self, opened_file, file_path: str, time_range: tuple) -> tuple:
-        if _check_var_in_dataset(opened_file, self.t_var):
+        # todo validating when variables are in groups?
+        # if _check_var_in_dataset(opened_file, self.t_var):
+        if self.strp_filename:  # strip the datetime from the file name
+            tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
+        elif self.engine == 'pygrib':
+            tvals = [opened_file[self.variables].validDate, ]
+        else:
             tvals = _array_by_eng(opened_file, self.t_var)
             if isinstance(tvals, np.datetime64):
                 tvals = [tvals]
@@ -569,12 +580,6 @@ class TimeSeries:
                     tvals = _delta_to_time(tvals, _attr_by_eng(opened_file, self.t_var, 'units'), self.origin_format)
                 else:
                     tvals = _delta_to_time(tvals, self.unit_str, self.origin_format)
-        elif self.strp_filename:  # strip the datetime from the file name
-            tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
-        elif self.engine == 'pygrib':
-            tvals = [opened_file[self.variables].validDate, ]
-        else:
-            raise RuntimeError('Unable to find the correct time values. Is there a time variable?')
 
         tvals = np.array(tvals)
 
