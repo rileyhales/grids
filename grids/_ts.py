@@ -144,9 +144,7 @@ class TimeSeries:
         self.dim_order = dim_order
 
         # optional parameters describing how to access the data
-        self.engine = kwargs.get('engine', False)
-        if not self.engine:
-            self.engine = _assign_eng(files[0])
+        self.engine = kwargs.get('engine', _assign_eng(files[0]))
         assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
         self.xr_kwargs = kwargs.get('xr_kwargs', None)
         self.fill_value = kwargs.get('fill_value', -9999.0)
