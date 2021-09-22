@@ -154,6 +154,18 @@ class TimeSeries:
         self.t_var_in_dims = self.t_var in self.dim_order
         self.t_index = self.dim_order.index(self.t_var) if self.t_var_in_dims else False
 
+        # optional parameters modifying how to interpret the spatial variables
+        self.x_var = kwargs.get('x_var', None)
+        self.y_var = kwargs.get('y_var', None)
+        if self.x_var is None:
+            for a in self.dim_order:
+                if a in SPATIAL_X_VARS:
+                    self.x_var = a
+        if self.y_var is None:
+            for a in self.dim_order:
+                if a in SPATIAL_Y_VARS:
+                    self.y_var = a
+
         # self.t_range = kwargs.get('t_range', slice(None))
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
@@ -490,15 +502,10 @@ class TimeSeries:
         return slices
 
     def _create_spatial_mask_array(self, vector: str, feature: str) -> np.ma:
-        x, y = None, None
-        for a in self.dim_order:
-            if a in SPATIAL_X_VARS:
-                x = a
-            elif a in SPATIAL_Y_VARS:
-                y = a
+        x = self.x_var
+        y = self.y_var
         if x is None or y is None:
             raise ValueError('Unable to determine x and y dimensions')
-
         sample_data = self._open_data(self.files[0])
         x = _array_by_eng(sample_data, x)
         y = _array_by_eng(sample_data, y)
