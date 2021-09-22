@@ -450,7 +450,8 @@ class TimeSeries:
                     slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_eng(opened_file, var, tuple(slices))
                     for mask in masks:
-                        masked_vals = np.where(mask[1], vals, np.nan).squeeze()
+                        # todo mixed order of x/y dimensions needs a transpose
+                        masked_vals = np.where(np.transpose(mask[1]), vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
                         for stat in self.stats:
                             results[f'{var}_{mask[0]}_{stat}'] += _array_to_stat_list(masked_vals, stat)
@@ -536,8 +537,7 @@ class TimeSeries:
         # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
             masks.append(
-                ('shape',
-                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
+                ('shape', riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
         elif self.behavior == 'feature':
             assert self.label_attr in vector_gdf.keys(), \
@@ -545,10 +545,9 @@ class TimeSeries:
             assert feature is not None, \
                 'Provide a value for the feature argument to query for certain features'
             vector_gdf = vector_gdf[vector_gdf[self.label_attr] == feature]
-            assert not vector_gdf.empty, f'No features have value "{feature}" for attribubte "{self.label_attr}"'
+            assert not vector_gdf.empty, f'No features have value "{feature}" for attribute "{self.label_attr}"'
             masks.append(
-                (feature,
-                 riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
+                (feature, riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
             )
 
         elif self.behavior == 'features':
@@ -596,7 +595,7 @@ class TimeSeries:
             if isinstance(t1, list) or isinstance(t1, tuple):
                 t1 = t1[self.t_index]
             if isinstance(t2, list) or isinstance(t2, tuple):
-                    t2 = t2[self.t_index]
+                t2 = t2[self.t_index]
         # otherwise, no time coordinates provided.
         else:
             t1 = None
