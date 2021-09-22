@@ -31,7 +31,6 @@ from ._utils import _guess_time_var
 from ._utils import _array_by_eng
 from ._utils import _array_to_stat_list
 from ._utils import _attr_by_eng
-from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_time
 from ._utils import _gen_stat_list
 
@@ -450,8 +449,7 @@ class TimeSeries:
                     slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_eng(opened_file, var, tuple(slices))
                     for mask in masks:
-                        # todo mixed order of x/y dimensions needs a transpose
-                        masked_vals = np.where(np.transpose(mask[1]), vals, np.nan).squeeze()
+                        masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
                         for stat in self.stats:
                             results[f'{var}_{mask[0]}_{stat}'] += _array_to_stat_list(masked_vals, stat)
@@ -503,13 +501,11 @@ class TimeSeries:
         return slices
 
     def _create_spatial_mask_array(self, vector: str, feature: str) -> np.ma:
-        x = self.x_var
-        y = self.y_var
-        if x is None or y is None:
+        if self.x_var is None or self.y_var is None:
             raise ValueError('Unable to determine x and y dimensions')
         sample_data = self._open_data(self.files[0])
-        x = _array_by_eng(sample_data, x)
-        y = _array_by_eng(sample_data, y)
+        x = _array_by_eng(sample_data, self.x_var)
+        y = _array_by_eng(sample_data, self.y_var)
         if self.engine != 'pygrib':
             sample_data.close()
 
@@ -520,7 +516,9 @@ class TimeSeries:
             y = y[:, 0]
 
         # check if you need to vertically invert the array mask (if y vals go from small to large)
+        # or if you need to transpose the mask (if the dimensions go x then y, should be y then x- think of the shape)
         invert = y[-1] > y[0]
+        transpose = self.dim_order.index(self.x_var) < self.dim_order.index(self.y_var)
 
         # read the shapefile
         vector_gdf = gpd.read_file(vector)
@@ -536,9 +534,10 @@ class TimeSeries:
         # creates a binary/boolean mask of the shapefile
         # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
-            masks.append(
-                ('shape', riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
-            )
+            m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
+            if transpose:
+                m = np.transpose(m)
+            masks.append(('shape', m))
         elif self.behavior == 'feature':
             assert self.label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
@@ -546,18 +545,19 @@ class TimeSeries:
                 'Provide a value for the feature argument to query for certain features'
             vector_gdf = vector_gdf[vector_gdf[self.label_attr] == feature]
             assert not vector_gdf.empty, f'No features have value "{feature}" for attribute "{self.label_attr}"'
-            masks.append(
-                (feature, riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert),)
-            )
+            m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
+            if transpose:
+                m = np.transpose(m)
+            masks.append((feature, m))
 
         elif self.behavior == 'features':
             assert self.label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
             for idx, row in vector_gdf.iterrows():
-                masks.append(
-                    (row[self.label_attr],
-                     riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert),)
-                )
+                m = riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert)
+                if transpose:
+                    m = np.transpose(m)
+                masks.append((row[self.label_attr], m))
         return masks
 
     def _handle_time(self, opened_file, file_path: str, time_range: tuple) -> tuple:
