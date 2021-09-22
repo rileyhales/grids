@@ -14,7 +14,7 @@ import h5py
 import netCDF4 as nc
 import numpy as np
 import pandas as pd
-import rasterio.features
+import rasterio.features as riof
 import requests
 import xarray as xr
 from pydap.cas.urs import setup_session
@@ -31,7 +31,6 @@ from ._utils import _guess_time_var
 from ._utils import _array_by_eng
 from ._utils import _array_to_stat_list
 from ._utils import _attr_by_eng
-from ._utils import _check_var_in_dataset
 from ._utils import _delta_to_time
 from ._utils import _gen_stat_list
 
@@ -153,6 +152,18 @@ class TimeSeries:
         self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
         self.t_var_in_dims = self.t_var in self.dim_order
         self.t_index = self.dim_order.index(self.t_var) if self.t_var_in_dims else False
+
+        # optional parameters modifying how to interpret the spatial variables
+        self.x_var = kwargs.get('x_var', None)
+        self.y_var = kwargs.get('y_var', None)
+        if self.x_var is None:
+            for a in self.dim_order:
+                if a in SPATIAL_X_VARS:
+                    self.x_var = a
+        if self.y_var is None:
+            for a in self.dim_order:
+                if a in SPATIAL_Y_VARS:
+                    self.y_var = a
 
         # self.t_range = kwargs.get('t_range', slice(None))
         self.interp_units = kwargs.get('interp_units', False)
@@ -437,7 +448,6 @@ class TimeSeries:
                 for i in range(num_time_steps):
                     slices[self.t_index] = slice(i, i + 1)
                     vals = _array_by_eng(opened_file, var, tuple(slices))
-                    vals = np.flip(vals, axis=0)
                     for mask in masks:
                         masked_vals = np.where(mask[1], vals, np.nan).squeeze()
                         masked_vals[masked_vals == self.fill_value] = np.nan
@@ -491,18 +501,11 @@ class TimeSeries:
         return slices
 
     def _create_spatial_mask_array(self, vector: str, feature: str) -> np.ma:
-        x, y = None, None
-        for a in self.dim_order:
-            if a in SPATIAL_X_VARS:
-                x = a
-            elif a in SPATIAL_Y_VARS:
-                y = a
-        if x is None or y is None:
+        if self.x_var is None or self.y_var is None:
             raise ValueError('Unable to determine x and y dimensions')
-
         sample_data = self._open_data(self.files[0])
-        x = _array_by_eng(sample_data, x)
-        y = _array_by_eng(sample_data, y)
+        x = _array_by_eng(sample_data, self.x_var)
+        y = _array_by_eng(sample_data, self.y_var)
         if self.engine != 'pygrib':
             sample_data.close()
 
@@ -512,47 +515,57 @@ class TimeSeries:
         if y.ndim == 2:
             y = y[:, 0]
 
+        # check if you need to vertically invert the array mask (if y vals go from small to large)
+        # or if you need to transpose the mask (if the dimensions go x then y, should be y then x- think of the shape)
+        invert = y[-1] > y[0]
+        transpose = self.dim_order.index(self.x_var) < self.dim_order.index(self.y_var)
+
         # read the shapefile
         vector_gdf = gpd.read_file(vector)
         vector_gdf = vector_gdf.to_crs(epsg=4326)
 
-        # set up the variables to creating and storing masks
+        # set up the variables to create and storing masks
         masks = []
-        gridshape = (y.shape[0], x.shape[0],)
-        affinetransform = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
+        # what is the shape of the grid to be masked
+        gshape = (y.shape[0], x.shape[0],)
+        # calculate the affine transformation of the grid to be masked
+        aff = affine.Affine(np.abs(x[1] - x[0]), 0, x.min(), 0, np.abs(y[1] - y[0]), y.min())
 
         # creates a binary/boolean mask of the shapefile
         # in the same crs, over the affine transform area, for a certain masking behavior
         if self.behavior == 'dissolve':
-            masks.append(
-                ('shape',
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
-            )
+            m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
+            if transpose:
+                m = np.transpose(m)
+            masks.append(('shape', m))
         elif self.behavior == 'feature':
             assert self.label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
             assert feature is not None, \
                 'Provide a value for the feature argument to query for certain features'
             vector_gdf = vector_gdf[vector_gdf[self.label_attr] == feature]
-            assert not vector_gdf.empty, f'No features have value "{feature}" for attribubte "{self.label_attr}"'
-            masks.append(
-                (feature,
-                 rasterio.features.geometry_mask(vector_gdf.geometry, gridshape, affinetransform, invert=True),)
-            )
+            assert not vector_gdf.empty, f'No features have value "{feature}" for attribute "{self.label_attr}"'
+            m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
+            if transpose:
+                m = np.transpose(m)
+            masks.append((feature, m))
 
         elif self.behavior == 'features':
             assert self.label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
             for idx, row in vector_gdf.iterrows():
-                masks.append(
-                    (row[self.label_attr],
-                     rasterio.features.geometry_mask(gpd.GeoSeries(row.geometry), gridshape, affinetransform,
-                                                     invert=True),)
-                )
+                m = riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert)
+                if transpose:
+                    m = np.transpose(m)
+                masks.append((row[self.label_attr], m))
         return masks
 
     def _handle_time(self, opened_file, file_path: str, time_range: tuple) -> tuple:
-        if _check_var_in_dataset(opened_file, self.t_var):
+        if self.strp_filename:  # strip the datetime from the file name
+            tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
+        elif self.engine == 'pygrib':
+            tvals = [opened_file[self.variables].validDate, ]
+        else:
             tvals = _array_by_eng(opened_file, self.t_var)
             if isinstance(tvals, np.datetime64):
                 tvals = [tvals]
@@ -569,12 +582,6 @@ class TimeSeries:
                     tvals = _delta_to_time(tvals, _attr_by_eng(opened_file, self.t_var, 'units'), self.origin_format)
                 else:
                     tvals = _delta_to_time(tvals, self.unit_str, self.origin_format)
-        elif self.strp_filename:  # strip the datetime from the file name
-            tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
-        elif self.engine == 'pygrib':
-            tvals = [opened_file[self.variables].validDate, ]
-        else:
-            raise RuntimeError('Unable to find the correct time values. Is there a time variable?')
 
         tvals = np.array(tvals)
 
@@ -586,7 +593,7 @@ class TimeSeries:
             if isinstance(t1, list) or isinstance(t1, tuple):
                 t1 = t1[self.t_index]
             if isinstance(t2, list) or isinstance(t2, tuple):
-                    t2 = t2[self.t_index]
+                t2 = t2[self.t_index]
         # otherwise, no time coordinates provided.
         else:
             t1 = None

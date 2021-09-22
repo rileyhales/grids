@@ -15,6 +15,7 @@ from ._consts import HDF_EXTENSIONS
 from ._consts import GEOTIFF_EXTENSIONS
 from ._consts import T_VARS
 from ._consts import ALL_STATS
+from ._consts import BOX_STATS
 
 from ._errors import unknown_stat
 from ._errors import unknown_open_file_object
@@ -29,17 +30,18 @@ __all__ = ['_assign_eng', '_array_by_eng', '_guess_time_var', '_attr_by_eng', '_
 
 
 def _assign_eng(sample_file):
-    if sample_file.startswith('http') and 'nasa.gov' in sample_file:  # nasa opendap server requires auth
+    sf = str(sample_file).lower()
+    if sf.startswith('http') and 'nasa.gov' in sf:  # nasa opendap server requires auth
         return 'auth-opendap'
-    elif sample_file.startswith('http'):  # reading from opendap
+    elif sf.startswith('http'):  # reading from opendap
         return 'opendap'
-    elif any(sample_file.endswith(i) for i in NETCDF_EXTENSIONS):
+    elif any(sf.endswith(i) for i in NETCDF_EXTENSIONS):
         return 'netcdf4'
-    elif any(sample_file.endswith(i) for i in GRIB_EXTENSIONS):
+    elif any(sf.endswith(i) for i in GRIB_EXTENSIONS):
         return 'cfgrib'
-    elif any(sample_file.endswith(i) for i in HDF_EXTENSIONS):
+    elif any(sf.endswith(i) for i in HDF_EXTENSIONS):
         return 'h5py'
-    elif any(sample_file.endswith(i) for i in GEOTIFF_EXTENSIONS):
+    elif any(sf.endswith(i) for i in GEOTIFF_EXTENSIONS):
         return 'rasterio'
     else:
         raise ValueError(f'Could not guess appropriate file reading ending, please specify it')
@@ -167,7 +169,7 @@ def _gen_stat_list(stats: str or list or tuple):
         if stats == 'all':
             return ALL_STATS
         if stats in ('box', 'boxplot', 'boxwhisker'):
-            return 'max', '75%', 'median', 'mean', '25%', 'min'
+            return BOX_STATS
         else:
             return stats.lower().replace(' ', '').split(',')
     elif isinstance(stats, tuple) or isinstance(stats, list):
