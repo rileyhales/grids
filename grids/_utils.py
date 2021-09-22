@@ -15,6 +15,7 @@ from ._consts import HDF_EXTENSIONS
 from ._consts import GEOTIFF_EXTENSIONS
 from ._consts import T_VARS
 from ._consts import ALL_STATS
+from ._consts import BOX_STATS
 
 from ._errors import unknown_stat
 from ._errors import unknown_open_file_object
@@ -168,7 +169,7 @@ def _gen_stat_list(stats: str or list or tuple):
         if stats == 'all':
             return ALL_STATS
         if stats in ('box', 'boxplot', 'boxwhisker'):
-            return 'max', '75%', 'median', 'mean', '25%', 'min'
+            return BOX_STATS
         else:
             return stats.lower().replace(' ', '').split(',')
     elif isinstance(stats, tuple) or isinstance(stats, list):

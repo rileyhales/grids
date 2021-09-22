@@ -561,8 +561,6 @@ class TimeSeries:
         return masks
 
     def _handle_time(self, opened_file, file_path: str, time_range: tuple) -> tuple:
-        # todo validating when variables are in groups?
-        # if _check_var_in_dataset(opened_file, self.t_var):
         if self.strp_filename:  # strip the datetime from the file name
             tvals = [datetime.datetime.strptime(os.path.basename(file_path), self.strp_filename), ]
         elif self.engine == 'pygrib':
