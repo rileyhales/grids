@@ -1,7 +1,7 @@
 from setuptools import setup
 
 name = 'grids'
-version = '0.14'
+version = '0.15'
 description = 'Tools for extracting time series subsets from n-dimensional arrays in several storage formats.'
 classifiers = [
     'Development Status :: 5 - Production/Stable',
