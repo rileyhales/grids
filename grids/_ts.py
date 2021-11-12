@@ -50,33 +50,47 @@ class TimeSeries:
     Args:
         files (list): A list (even if len==1) of either absolute file paths to netcdf, grib, hdf5, or geotiff files or
             urls to an OPeNDAP service (but beware the data transfer speed bottleneck)
-        variables (str or int or list or tuple): The name of the variable(s) to query as they are stored in the file
+        var (str or int or list or tuple): The name of the variable(s) to query as they are stored in the file
             (e.g. often 'temp' or 'T' instead of Temperature) or the band number if you are using grib files *and* you
             specify the engine as pygrib. If the var is contained in a group, include the group name as a unix style
-            path e.g. 'group_name/var'
-        dim_order (tuple): A tuple of the names of the dimensions for `var`, listed in order.
+            path e.g. 'group_name/var'.
+        dim_order (tuple): A tuple of the names of the dimensions/coordinate variables for all of the variables listed
+            in the "var" parameter, listed in order. If the coordinate variables are contained in a group, include the
+            group name as a unix style path e.g. 'group_name/coord_var'.
 
     Keyword Args:
-        t_var (str): Name of the time variable if it is used in the files. grids will try to guess it if you do not
-            specify and default to 'time'
-        stats (str or tuple): How to reduce arrays of values to a single scalar value for the timeseries.
-            Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%) or all.
-            Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
-        engine (str): the python package used to power the file reading. Defaults to best for the type of input data
+        t_var (str): Name of the time dimension/coordinate variable if it is used in the data. Grids will attempt to
+            guess if it is not "time" and you do not specify one with this argument.
+        x_var (str): Name of the x dimension/coordinate variable if it is used in the data. Grids will attempt to
+            guess if it is not specified and not a standard name.
+        y_var (str): Name of the y dimension/coordinate variable if it is used in the data. Grids will attempt to
+            guess if it is not specified and not a standard name.
+
+        engine (str): the python package used to power the file reading. Defaults to best for the type of input data.
+            The options include 'xarray', 'opendap', 'auth-opendap', 'netcdf4', 'cfgrib', 'pygrib', 'h5py', 'rasterio'
+        xr_kwargs (dict): A dictionary of kwargs that you might need when opening complex grib files with xarray
         user (str): a username used for authenticating remote datasets, if required by your remote data source
         pswd (str): a password used for authenticating remote datasets, if required by your remote data source
         session (requests.Session): a requests Session object preloaded with credentials/tokens for authentication
-        xr_kwargs (dict): A dictionary of kwargs that you might need when opening complex grib files with xarray
-        fill_value (int): The value used for filling no_data spaces in the source file's array. Default: -9999.0
+
+        stats (str or tuple): How to reduce arrays of values to a single value in the series dataframe.
+            Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min').
+            Options include: mean, median, max, min, sum, std, or a percentile (e.g. '25%').
+            Or, provide 'all' which is interpreted as (mean, median, max, min, sum, std, ).
+            Or, provide 'box' or 'boxplot' which is interpreted as (max, 75%, median, mean, 25%, min, ).
+            Or, provide 'values' to get a flat list of all non-null values in the query so you can compute other stats.
+        fill_value (int): The value used for filling no_data/null values in the variable's array. Default: -9999.0
+
         interp_units (bool): If your data conforms to the CF NetCDF standard for time data, choose True to
             convert the values in the time variable to datetime strings in the pandas output. The units string for the
             time variable of each file is checked separately unless you specify it in the unit_str parameter.
-        unit_str (str): a CF Standard conforming string indicating how the spacing and origin of the time values.
-            Only specify this if ALL files that you query will contain the same units string. This is helpful if your
-            files do not contain a units string. Usually this looks like "step_size since YYYY-MM-DD HH:MM:SS" such as
-            "days since 2000-01-01 00:00:00".
         origin_format (str): A datetime.strptime string for extracting the origin time from the units string.
-        strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names.
+        unit_str (str): a CF Standard conforming string indicating how the spacing and origin of the time values.
+            This is helpful if your files do not contain a units string. Only specify this if ALL files that you query
+            use the same units string. Usually this looks like "step_size since YYYY-MM-DD HH:MM:SS" such as
+            "days since 2000-01-01 00:00:00".
+        strp_filename (str): A datetime.strptime string for extracting datetimes from patterns in file names. Only for
+            datasets which contain 1 time step per file.
 
     Methods:
         point: Extracts a time series of values at a point for a given coordinate pair
@@ -85,55 +99,35 @@ class TimeSeries:
         range: Alias for TimeSeries.bound()
         shape: Extracts a time series of values on a line or within a polygon for each requested statistic
 
-    Example:
-        import grids
-
-        # collect the input information
-        files = ['/path/to/file/1.nc', '/path/to/file/2.nc', '/path/to/file/3.nc', ]
-        var = 'name_of_my_variable'
-        dim_order = ('name', 'of', 'dimensions', 'of', 'variable')
-
-        # combine these into an instance of the TimeSeries class
-        series = grids.TimeSeries(files=files, var=var, dim_order=dim_order)
-        # call the function to query the time series subset you're interested in
-        point_time_series = series.point(coords*)
-
-    Example:
-        # current GFS 1/4 degree forecast time series for air temperature in Provo Utah
-        files = ['https://tds.scigw.unidata.ucar.edu/thredds/dodsC/grib/NCEP/GFS/Global_0p25deg/Best']
-        var = 'Temperature_surface'
-        dim_order = ('time', 'lat', 'lon')
-
-        series = TimeSeries(files=files, var=var, dim_order=dim_order)
-        temp_forecast = series.point(None, 40.25, -111.65 + 360)
-
     """
     # core parameters from user
     files: list
     var: tuple
     dim_order: tuple
-    engine: str
 
-    # how to handle the time data
+    # handling non-standard dimension names or organizations
     t_var: str
-    t_index: int
-    # t_range: tuple
-    interp_units: bool
-    strp_filename: str
-    unit_str: str
-    origin_format: str
-
-    # reducing arrays to numbers
-    stats: str or list or tuple or np.ndarray
-    behavior: str
-    label_attr: str
-    fill_value: int or float or bool
+    x_var: str
+    y_var: str
 
     # help opening data
+    engine: str
     xr_kwargs: dict
     user: str
     pswd: str
     session: requests.session
+
+    # reducing arrays to numbers
+    stats: str or list or tuple or np.ndarray
+    fill_value: int or float or bool
+
+    # how to handle the time data
+    interp_units: bool
+    origin_format: str
+    unit_str: str
+    strp_filename: str
+    t_index: int  # derived from dim_order and t_var
+    t_var_in_dims: bool  # derived from dim_order and t_var
 
     def __init__(self, files: list, var: str or int or list or tuple, dim_order: tuple, **kwargs):
         # parameters configuring how the data is interpreted
@@ -146,14 +140,9 @@ class TimeSeries:
         self.engine = kwargs.get('engine', _assign_eng(files[0]))
         assert self.engine in ALL_ENGINES, f'engine "{self.engine}" not recognized'
         self.xr_kwargs = kwargs.get('xr_kwargs', None)
-        self.fill_value = kwargs.get('fill_value', -9999.0)
 
-        # optional parameters modifying how the time data is interpreted
-        self.t_var = kwargs.get('t_var', _guess_time_var(self.dim_order))
-        self.t_var_in_dims = self.t_var in self.dim_order
-        self.t_index = self.dim_order.index(self.t_var) if self.t_var_in_dims else False
-
-        # optional parameters modifying how to interpret the spatial variables
+        # optional parameters modifying how dimension/coordinate variable names are interpreted
+        self.t_var = kwargs.get('t_var', None)
         self.x_var = kwargs.get('x_var', None)
         self.y_var = kwargs.get('y_var', None)
         if self.x_var is None:
@@ -164,8 +153,13 @@ class TimeSeries:
             for a in self.dim_order:
                 if a in SPATIAL_Y_VARS:
                     self.y_var = a
+        if self.t_var is None:
+            self.t_var = _guess_time_var(dim_order)
 
-        # self.t_range = kwargs.get('t_range', slice(None))
+        self.t_var_in_dims = self.t_var in self.dim_order
+        self.t_index = self.dim_order.index(self.t_var) if self.t_var_in_dims else False
+
+        # additional options describing how the time data should be interpreted
         self.interp_units = kwargs.get('interp_units', False)
         self.strp_filename = kwargs.get('strp_filename', False)
         self.unit_str = kwargs.get('unit_str', None)
@@ -173,16 +167,13 @@ class TimeSeries:
 
         # optional parameter modifying which statistics to process
         self.stats = _gen_stat_list(kwargs.get('stats', ('mean',)))
-
-        # option parameters describing behavior for timeseries with vector data (cache to make scripts concise)
-        self.behavior = kwargs.get('behavior', 'dissolve')
-        self.label_attr = kwargs.get('label_attr', None)
+        self.fill_value = kwargs.get('fill_value', -9999.0)
 
         # optional authentication for remote datasets
         self.user = kwargs.get('user', None)
         self.pswd = kwargs.get('pswd', None)
         self.session = kwargs.get('session', False)
-        if not self.session and self.user is not None and self.pswd is not None:
+        if 'opendap' in self.engine and not self.session and self.user is not None and self.pswd is not None:
             a = requests.Session()
             a.auth = (self.user, self.pswd)
             self.session = a
@@ -332,10 +323,7 @@ class TimeSeries:
                 in order of the dimensions of the source arrays.
             max_coords (tuple): a tuple containing maximum coordinates of a bounding box range- coordinates given
                 in order of the dimensions of the source arrays.
-            stats (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
-                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%), all, or values.
-                Values returns a flattened list of all values in query range for plotting or computing other stats.
-                Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
+            stats (str or tuple): How to reduce arrays of values to a single value for the series. See class docstring.
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
@@ -386,7 +374,7 @@ class TimeSeries:
     def shape(self,
               mask: str or np.ndarray,
               time_range: tuple = (None, None),
-              behavior: str = None,
+              behavior: str = 'dissolve',
               label_attr: str = None,
               feature: str = None,
               stats: str or tuple = None, ) -> pd.DataFrame:
@@ -402,10 +390,7 @@ class TimeSeries:
                 with unique values for each feature used to label the resulting series
             label_attr: The name of the attribute in the vector data features to label the several outputs
             feature: A value of the label_attr attribute for 1 or more features found in the provided shapefile
-            stats (str or tuple): How to reduce arrays of values to a single scalar value for the time series.
-                Options include: mean, median, max, min, sum, std, a percentile (e.g. 25%), all, or values.
-                Values returns a flattened list of all values in query range for plotting or computing other stats.
-                Provide a list of strings (e.g. ['mean', 'max']), or a comma separated string (e.g. 'mean,max,min')
+            stats (str or tuple): How to reduce arrays of values to a single value for the series. See class docstring.
         Returns:
             pandas.DataFrame with an index, a datetime column, and a column named for each statistic specified
         """
@@ -413,12 +398,10 @@ class TimeSeries:
             raise RuntimeError('You can only extract by polygon if the data is exactly 3 dimensional: time, y, x')
 
         # cache the behavior and organization parameters
-        self.behavior = behavior if behavior is not None else self.behavior
-        self.label_attr = label_attr if label_attr is not None else self.label_attr
         self.stats = _gen_stat_list(stats) if stats is not None else self.stats
 
         if isinstance(mask, str):
-            masks = self._create_spatial_mask_array(mask, feature)
+            masks = self._create_spatial_mask_array(mask, behavior, label_attr, feature)
         elif isinstance(mask, np.ndarray):
             masks = ['masked', mask]
         else:
@@ -500,7 +483,7 @@ class TimeSeries:
             self.engine = revert_engine
         return slices
 
-    def _create_spatial_mask_array(self, vector: str, feature: str) -> np.ma:
+    def _create_spatial_mask_array(self, vector: str, behavior: str, label_attr: str, feature: str) -> np.ma:
         if self.x_var is None or self.y_var is None:
             raise ValueError('Unable to determine x and y dimensions')
         sample_data = self._open_data(self.files[0])
@@ -522,7 +505,6 @@ class TimeSeries:
 
         # read the shapefile
         vector_gdf = gpd.read_file(vector)
-        vector_gdf = vector_gdf.to_crs(epsg=4326)
 
         # set up the variables to create and storing masks
         masks = []
@@ -533,31 +515,31 @@ class TimeSeries:
 
         # creates a binary/boolean mask of the shapefile
         # in the same crs, over the affine transform area, for a certain masking behavior
-        if self.behavior == 'dissolve':
+        if behavior == 'dissolve':
             m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
             if transpose:
                 m = np.transpose(m)
             masks.append(('shape', m))
-        elif self.behavior == 'feature':
-            assert self.label_attr in vector_gdf.keys(), \
+        elif behavior == 'feature':
+            assert label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
             assert feature is not None, \
                 'Provide a value for the feature argument to query for certain features'
-            vector_gdf = vector_gdf[vector_gdf[self.label_attr] == feature]
-            assert not vector_gdf.empty, f'No features have value "{feature}" for attribute "{self.label_attr}"'
+            vector_gdf = vector_gdf[vector_gdf[label_attr] == feature]
+            assert not vector_gdf.empty, f'No features have value "{feature}" for attribute "{label_attr}"'
             m = riof.geometry_mask(vector_gdf.geometry, gshape, aff, invert=invert)
             if transpose:
                 m = np.transpose(m)
             masks.append((feature, m))
 
-        elif self.behavior == 'features':
-            assert self.label_attr in vector_gdf.keys(), \
+        elif behavior == 'features':
+            assert label_attr in vector_gdf.keys(), \
                 'label_attr parameter not found in attributes list of the vector data'
             for idx, row in vector_gdf.iterrows():
                 m = riof.geometry_mask(gpd.GeoSeries(row.geometry), gshape, aff, invert=invert)
                 if transpose:
                     m = np.transpose(m)
-                masks.append((row[self.label_attr], m))
+                masks.append((row[label_attr], m))
         return masks
 
     def _handle_time(self, opened_file, file_path: str, time_range: tuple) -> tuple:

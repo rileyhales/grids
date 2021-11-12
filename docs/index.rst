@@ -20,10 +20,10 @@ can be extracted for:
 #. Ranges or Bounding Boxes - by specifying the minimum and maximum coordinates for each dimension
 #. Spatial data - if the rasters are spatial data and the appropriate dimensions are specified
 
-Citations
-*********
+Citing Grids
+************
 
-If you use Grids, please cite
+If you use Grids in a project, please cite
 
 - Our journal article at MDPI Water. doi: `10.3390/w13152066 <https://doi.org/10.3390/w13152066>`_
 - The source code through Zenodo. doi: `10.5281/zenodo.5225437 <https://doi.org/10.5281/zenodo.5225437>`_
@@ -50,6 +50,12 @@ View a live `demo python notebook <https://colab.research.google.com/gist/rileyh
 
 Find a copy of the notebook on `GitHub Gists <https://gist.github.com/rileyhales/79761303df16127e0195e11425fc2d9d>`_.
 
+TimeSeries Class Documentation
+******************************
+
+.. automodule:: grids
+    :members: TimeSeries
+
 Handling Time values
 ********************
 Datetime values are extracted in one of 4 ways (controlled by the :code:`interp_units`, :code:`units_str`,
@@ -62,12 +68,6 @@ Datetime values are extracted in one of 4 ways (controlled by the :code:`interp_
    values coming from that dataset.
 #. If a time variable exists, its numerical values are used without further interpretation.
 #. The string file name is used if there is no time variable and no other options were provided.
-
-TimeSeries
-**********
-
-.. automodule:: grids
-    :members: TimeSeries
 
 Speed Test Results
 ******************
